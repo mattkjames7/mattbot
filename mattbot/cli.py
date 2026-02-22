@@ -117,12 +117,28 @@ class AgentCLI:
     
     def run(self):
         """Run the interactive CLI loop."""
-        print("╔════════════════════════════════════════════════════════════════════════════╗")
-        print("║                            MattBot - Interactive CLI                       ║")
-        print("╚════════════════════════════════════════════════════════════════════════════╝")
-        print(f"\nWorking directory: {self.cwd}")
-        print(f"Model: {self.model}")
-        print("\nType your message and press Enter. Press Ctrl+D (or Ctrl+Z on Windows) to exit.")
+        ascii_art = r"""
+[bold cyan]
+    ___  ___      _   _   ______       _   
+    |  \/  |     | | | | | ___ \     | |  
+    | .  . | __ _| |_| |_| |_/ / ___ | |_ 
+    | |\/| |/ _` | __| __| ___ \/ _ \| __|
+    | |  | | (_| | |_| |_| |_/ / (_) | |_ 
+    \_|  |_/\__,_|\__|\__\____/ \___/ \__|
+[/bold cyan]
+[yellow]    
+         .--.
+        |o_o |     Interactive AI Assistant
+        |:_/ |     
+       //   \ \    Type your commands below...
+      (|     | )   Press Ctrl+D to exit
+     /'\_   _/`\
+     \___)=(___/
+[/yellow]
+"""
+        self.console.print(ascii_art)
+        self.console.print(f"[bold]Working directory:[/bold] [green]{self.cwd}[/green]")
+        self.console.print(f"[bold]Model:[/bold] [green]{self.model}[/green]")
         self.print_separator()
         
         while True:
