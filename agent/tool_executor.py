@@ -742,8 +742,67 @@ def web_search(query: str, num_results: int = 5) -> Dict[str, Any]:
             - query: the query that was searched
             - error: error message if failed
     """
-    # TODO: Implement in next step
-    raise NotImplementedError("web_search not yet implemented")
+    try:
+        # Import DuckDuckGo search
+        try:
+            from ddgs import DDGS
+        except ImportError:
+            return {
+                "success": False,
+                "results": [],
+                "query": query,
+                "error": "ddgs not installed. Run: pip install ddgs"
+            }
+        
+        # Validate inputs
+        if not query or not query.strip():
+            return {
+                "success": False,
+                "results": [],
+                "query": query,
+                "error": "Search query cannot be empty"
+            }
+        
+        if num_results < 1:
+            return {
+                "success": False,
+                "results": [],
+                "query": query,
+                "error": "num_results must be at least 1"
+            }
+        
+        # Perform search
+        results = []
+        
+        with DDGS() as ddgs:
+            # Use text search
+            search_results = ddgs.text(
+                query,
+                max_results=min(num_results, 20)  # Cap at 20 to avoid rate limits
+            )
+            
+            for result in search_results:
+                results.append({
+                    "title": result.get("title", ""),
+                    "url": result.get("href", ""),
+                    "snippet": result.get("body", ""),
+                    "source": result.get("href", "").split('/')[2] if result.get("href") else ""
+                })
+        
+        return {
+            "success": True,
+            "results": results,
+            "query": query,
+            "total_results": len(results)
+        }
+    
+    except Exception as e:
+        return {
+            "success": False,
+            "results": [],
+            "query": query,
+            "error": f"Error performing web search: {str(e)}"
+        }
 
 
 # Tool registry mapping tool names to functions

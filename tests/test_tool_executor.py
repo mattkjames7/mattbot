@@ -14,9 +14,11 @@ from agent.tool_executor import (
     list_directory,
     grep_search,
     semantic_search,
+    web_search,
     execute_tool,
     ToolExecutionError
 )
+
 
 
 
@@ -1552,3 +1554,153 @@ class TestSemanticSearch:
                 assert result["results"][0]["start_line"] < result["results"][0]["end_line"]
         finally:
             os.unlink(temp_path)
+
+
+class TestWebSearch:
+    """Tests for web_search function."""
+    
+    def test_basic_search(self):
+        """Test basic web search."""
+        result = web_search("Python programming", num_results=3)
+        
+        assert result["success"] is True
+        assert "results" in result
+        assert "query" in result
+        assert result["query"] == "Python programming"
+        assert isinstance(result["results"], list)
+    
+    def test_search_returns_results(self):
+        """Test that search returns actual results."""
+        result = web_search("Wikipedia", num_results=2)
+        
+        assert result["success"] is True
+        # Should find at least some results for common query
+        if result["results"]:
+            assert len(result["results"]) > 0
+            
+            # Check result structure
+            first_result = result["results"][0]
+            assert "title" in first_result
+            assert "url" in first_result
+            assert "snippet" in first_result
+            assert "source" in first_result
+            
+            # URL should be valid
+            assert first_result["url"].startswith("http")
+    
+    def test_search_result_fields(self):
+        """Test that all expected fields are present in results."""
+        result = web_search("test query", num_results=1)
+        
+        assert result["success"] is True
+        assert "results" in result
+        assert "query" in result
+        assert "total_results" in result
+        
+        if result["results"]:
+            res = result["results"][0]
+            required_fields = ["title", "url", "snippet", "source"]
+            for field in required_fields:
+                assert field in res
+    
+    def test_search_with_limit(self):
+        """Test search with custom result limit."""
+        result = web_search("Python", num_results=5)
+        
+        assert result["success"] is True
+        # Should return at most 5 results
+        assert len(result["results"]) <= 5
+    
+    def test_search_empty_query(self):
+        """Test search with empty query."""
+        result = web_search("", num_results=3)
+        
+        assert result["success"] is False
+        assert "error" in result
+        assert "empty" in result["error"].lower()
+    
+    def test_search_whitespace_query(self):
+        """Test search with whitespace-only query."""
+        result = web_search("   ", num_results=3)
+        
+        assert result["success"] is False
+        assert "error" in result
+    
+    def test_search_invalid_num_results(self):
+        """Test search with invalid num_results."""
+        result = web_search("test", num_results=0)
+        
+        assert result["success"] is False
+        assert "error" in result
+        assert "num_results" in result["error"].lower()
+    
+    def test_search_negative_num_results(self):
+        """Test search with negative num_results."""
+        result = web_search("test", num_results=-1)
+        
+        assert result["success"] is False
+        assert "error" in result
+    
+    def test_search_large_num_results(self):
+        """Test search with large num_results (should be capped)."""
+        result = web_search("Python", num_results=100)
+        
+        assert result["success"] is True
+        # Should be capped at 20
+        assert len(result["results"]) <= 20
+    
+    def test_search_specific_topic(self):
+        """Test search for specific topic."""
+        result = web_search("Python list comprehension", num_results=3)
+        
+        assert result["success"] is True
+        assert result["query"] == "Python list comprehension"
+    
+    def test_search_url_format(self):
+        """Test that returned URLs are properly formatted."""
+        result = web_search("GitHub", num_results=2)
+        
+        assert result["success"] is True
+        if result["results"]:
+            for res in result["results"]:
+                url = res["url"]
+                assert url.startswith("http://") or url.startswith("https://")
+    
+    def test_search_source_extraction(self):
+        """Test that source domain is extracted from URL."""
+        result = web_search("Wikipedia", num_results=2)
+        
+        assert result["success"] is True
+        if result["results"]:
+            for res in result["results"]:
+                # Source should be extracted from URL
+                if res["url"]:
+                    assert len(res["source"]) > 0
+    
+    def test_search_with_special_characters(self):
+        """Test search with special characters in query."""
+        result = web_search("Python & programming", num_results=2)
+        
+        assert result["success"] is True
+        assert "results" in result
+    
+    def test_search_with_quotes(self):
+        """Test search with quoted phrase."""
+        result = web_search('"Python programming language"', num_results=2)
+        
+        assert result["success"] is True
+        assert "results" in result
+    
+    def test_search_unicode_query(self):
+        """Test search with unicode characters."""
+        result = web_search("Python 编程", num_results=2)
+        
+        assert result["success"] is True
+        assert "results" in result
+    
+    def test_search_technical_query(self):
+        """Test search with technical query."""
+        result = web_search("machine learning algorithms", num_results=3)
+        
+        assert result["success"] is True
+        assert result["query"] == "machine learning algorithms"
