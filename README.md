@@ -27,11 +27,34 @@ An AI agent system with tool-calling capabilities, similar to Copilot/Cursor.
 
 ```bash
 # Create virtual environment
+## Installation
+
+### From Source (Development)
+
+```bash
+# Clone the repository
+git clone https://github.com/mattkjames7/mattbot.git
+cd mattbot
+
+# Create virtual environment
 python3 -m venv env
 source env/bin/activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Install in editable mode with dev dependencies
+pip install -e ".[dev]"
+```
+
+### As a Package
+
+```bash
+# Install from source
+pip install git+https://github.com/mattkjames7/mattbot.git
+
+# Or install in editable mode for development
+pip install -e .
+
+# With dev dependencies (pytest, coverage)
+pip install -e ".[dev]"
 ```
 
 ## Configuration
@@ -47,7 +70,7 @@ pytest tests/
 # Run specific test suite
 pytest tests/test_tool_executor.py -v
 
-# Skip integration tests
+# Skip integration tests (recommended for CI)
 pytest tests/ -k "not integration"
 ```
 

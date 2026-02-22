@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-oss"
+version = "0.1.0"
+description = "An AI agent system with tool-calling capabilities, similar to Copilot/Cursor"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+authors = [
+    {name = "Matt"},
+]
+keywords = ["ai", "agent", "llm", "tools", "ollama", "copilot"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "requests>=2.31.0",
+    "numpy>=1.24.0",
+    "ddgs>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/USERNAME/REPO"
+Documentation = "https://github.com/USERNAME/REPO#readme"
+Repository = "https://github.com/USERNAME/REPO"
+Issues = "https://github.com/USERNAME/REPO/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agent*"]
+exclude = ["tests*", "env*", ".github*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "integration: marks tests that require external services (Ollama API, internet access)",
+]
+
+[tool.coverage.run]
+source = ["agent"]
+omit = ["*/tests/*", "*/test_*.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
