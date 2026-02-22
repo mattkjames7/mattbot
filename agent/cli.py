@@ -31,10 +31,14 @@ class AgentCLI:
         for tool_call in tool_calls:
             tool_name = tool_call["function"]["name"]
             
-            # Parse arguments
-            try:
-                arguments = json.loads(tool_call["function"]["arguments"])
-            except json.JSONDecodeError:
+            # Parse arguments (handle both string and dict formats)
+            arguments = tool_call["function"]["arguments"]
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except json.JSONDecodeError:
+                    arguments = {}
+            elif not isinstance(arguments, dict):
                 arguments = {}
             
             print(f"🔧 Calling tool: {tool_name}")
