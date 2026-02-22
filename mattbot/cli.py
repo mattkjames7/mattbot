@@ -126,15 +126,19 @@ class AgentCLI:
     | |  | | (_| | |_| |_| |_/ / (_) | |_ 
     \_|  |_/\__,_|\__|\__\____/ \___/ \__|
 [/bold cyan]
-[yellow]    
-         .--.
-        |o_o |     Interactive AI Assistant
-        |:_/ |     
-       //   \ \    Type your commands below...
-      (|     | )   Press Ctrl+D to exit
-     /'\_   _/`\
-     \___)=(___/
+[yellow]
+              _ ._  _ , _ ._
+            (_ ' ( `  )_  .__)
+          ( (  (    )   `)  ) _)
+         (__ (_   (_ . _) _) ,__)
+             `~~`\ ' . /`~~`
+                  ;   ;
+                  /   \
+______________..-`_____`-..______________
 [/yellow]
+
+[dim]Interactive AI Assistant - Type your commands below
+Press Ctrl+D to exit[/dim]
 """
         self.console.print(ascii_art)
         self.console.print(f"[bold]Working directory:[/bold] [green]{self.cwd}[/green]")
