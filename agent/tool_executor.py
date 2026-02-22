@@ -344,8 +344,120 @@ def list_directory(path: str, recursive: bool = False) -> Dict[str, Any]:
             - path: the path that was listed
             - error: error message if failed
     """
-    # TODO: Implement in next step
-    raise NotImplementedError("list_directory not yet implemented")
+    try:
+        # Check if path exists
+        if not os.path.exists(path):
+            return {
+                "success": False,
+                "entries": [],
+                "path": path,
+                "error": f"Path does not exist: {path}"
+            }
+        
+        # Check if path is a directory
+        if not os.path.isdir(path):
+            return {
+                "success": False,
+                "entries": [],
+                "path": path,
+                "error": f"Path is not a directory: {path}"
+            }
+        
+        entries = []
+        
+        if recursive:
+            # Recursive listing - walk the directory tree
+            for root, dirs, files in os.walk(path):
+                # Get relative path from base
+                rel_root = os.path.relpath(root, path)
+                if rel_root == '.':
+                    rel_root = ''
+                
+                # Add directories
+                for dir_name in sorted(dirs):
+                    rel_path = os.path.join(rel_root, dir_name) if rel_root else dir_name
+                    full_path = os.path.join(root, dir_name)
+                    entries.append({
+                        "name": dir_name,
+                        "path": rel_path,
+                        "type": "directory",
+                        "size": None
+                    })
+                
+                # Add files
+                for file_name in sorted(files):
+                    rel_path = os.path.join(rel_root, file_name) if rel_root else file_name
+                    full_path = os.path.join(root, file_name)
+                    try:
+                        size = os.path.getsize(full_path)
+                    except (OSError, PermissionError):
+                        size = None
+                    
+                    entries.append({
+                        "name": file_name,
+                        "path": rel_path,
+                        "type": "file",
+                        "size": size
+                    })
+        else:
+            # Non-recursive listing - just immediate children
+            items = sorted(os.listdir(path))
+            
+            for item in items:
+                full_path = os.path.join(path, item)
+                
+                if os.path.isdir(full_path):
+                    entries.append({
+                        "name": item,
+                        "path": item,
+                        "type": "directory",
+                        "size": None
+                    })
+                elif os.path.isfile(full_path):
+                    try:
+                        size = os.path.getsize(full_path)
+                    except (OSError, PermissionError):
+                        size = None
+                    
+                    entries.append({
+                        "name": item,
+                        "path": item,
+                        "type": "file",
+                        "size": size
+                    })
+                else:
+                    # Other types (symlinks, etc.)
+                    entries.append({
+                        "name": item,
+                        "path": item,
+                        "type": "other",
+                        "size": None
+                    })
+        
+        return {
+            "success": True,
+            "entries": entries,
+            "path": path,
+            "total_entries": len(entries),
+            "files": sum(1 for e in entries if e["type"] == "file"),
+            "directories": sum(1 for e in entries if e["type"] == "directory")
+        }
+    
+    except PermissionError:
+        return {
+            "success": False,
+            "entries": [],
+            "path": path,
+            "error": f"Permission denied: {path}"
+        }
+    
+    except Exception as e:
+        return {
+            "success": False,
+            "entries": [],
+            "path": path,
+            "error": f"Error listing directory: {str(e)}"
+        }
 
 
 def grep_search(pattern: str, path: str, file_pattern: Optional[str] = None,

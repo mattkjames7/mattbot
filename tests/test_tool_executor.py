@@ -11,6 +11,7 @@ from agent.tool_executor import (
     read_file,
     write_file,
     edit_file,
+    list_directory,
     execute_tool,
     ToolExecutionError
 )
@@ -822,3 +823,238 @@ class TestEditFile:
                 assert content == "keep this\nkeep this too\n"
         finally:
             os.unlink(temp_path)
+
+class TestListDirectory:
+    """Tests for list_directory tool."""
+    
+    def test_list_empty_directory(self):
+        """Test listing an empty directory."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = list_directory(tmpdir)
+            
+            assert result["success"] is True
+            assert result["entries"] == []
+            assert result["total_entries"] == 0
+            assert result["files"] == 0
+            assert result["directories"] == 0
+    
+    def test_list_directory_with_files(self):
+        """Test listing a directory with files."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create some files
+            Path(tmpdir, "file1.txt").write_text("content")
+            Path(tmpdir, "file2.py").write_text("code")
+            
+            result = list_directory(tmpdir)
+            
+            assert result["success"] is True
+            assert result["total_entries"] == 2
+            assert result["files"] == 2
+            assert result["directories"] == 0
+            
+            # Check entries
+            names = [e["name"] for e in result["entries"]]
+            assert "file1.txt" in names
+            assert "file2.py" in names
+            
+            # Check all are files
+            assert all(e["type"] == "file" for e in result["entries"])
+    
+    def test_list_directory_with_subdirs(self):
+        """Test listing a directory with subdirectories."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create subdirectories
+            os.makedirs(os.path.join(tmpdir, "subdir1"))
+            os.makedirs(os.path.join(tmpdir, "subdir2"))
+            
+            result = list_directory(tmpdir)
+            
+            assert result["success"] is True
+            assert result["total_entries"] == 2
+            assert result["files"] == 0
+            assert result["directories"] == 2
+            
+            # Check entries
+            names = [e["name"] for e in result["entries"]]
+            assert "subdir1" in names
+            assert "subdir2" in names
+            
+            # Check all are directories
+            assert all(e["type"] == "directory" for e in result["entries"])
+    
+    def test_list_mixed_directory(self):
+        """Test listing a directory with both files and subdirectories."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create files and directories
+            Path(tmpdir, "file1.txt").write_text("content")
+            Path(tmpdir, "file2.txt").write_text("content")
+            os.makedirs(os.path.join(tmpdir, "subdir1"))
+            os.makedirs(os.path.join(tmpdir, "subdir2"))
+            
+            result = list_directory(tmpdir)
+            
+            assert result["success"] is True
+            assert result["total_entries"] == 4
+            assert result["files"] == 2
+            assert result["directories"] == 2
+    
+    def test_list_directory_recursive(self):
+        """Test recursive directory listing."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create nested structure
+            Path(tmpdir, "file1.txt").write_text("root")
+            os.makedirs(os.path.join(tmpdir, "subdir1"))
+            Path(tmpdir, "subdir1", "file2.txt").write_text("sub1")
+            os.makedirs(os.path.join(tmpdir, "subdir1", "nested"))
+            Path(tmpdir, "subdir1", "nested", "file3.txt").write_text("nested")
+            
+            result = list_directory(tmpdir, recursive=True)
+            
+            assert result["success"] is True
+            assert result["total_entries"] > 3  # At least files + dirs
+            
+            # Check paths include subdirectories
+            paths = [e["path"] for e in result["entries"]]
+            assert "file1.txt" in paths
+            assert any("subdir1" in p for p in paths)
+            assert any("nested" in p for p in paths)
+    
+    def test_list_directory_sizes(self):
+        """Test that file sizes are included."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create file with known size
+            file_path = Path(tmpdir, "test.txt")
+            content = "Hello, World!"
+            file_path.write_text(content)
+            
+            result = list_directory(tmpdir)
+            
+            assert result["success"] is True
+            file_entry = result["entries"][0]
+            assert file_entry["type"] == "file"
+            assert file_entry["size"] == len(content)
+    
+    def test_list_nonexistent_directory(self):
+        """Test listing a directory that doesn't exist."""
+        result = list_directory("/nonexistent/path/12345")
+        
+        assert result["success"] is False
+        assert "does not exist" in result["error"]
+        assert result["entries"] == []
+    
+    def test_list_file_instead_of_directory(self):
+        """Test listing a file path instead of directory."""
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            temp_path = f.name
+        
+        try:
+            result = list_directory(temp_path)
+            
+            assert result["success"] is False
+            assert "not a directory" in result["error"]
+        finally:
+            os.unlink(temp_path)
+    
+    def test_list_directory_sorted(self):
+        """Test that entries are sorted."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create files in non-alphabetical order
+            Path(tmpdir, "zebra.txt").write_text("z")
+            Path(tmpdir, "alpha.txt").write_text("a")
+            Path(tmpdir, "beta.txt").write_text("b")
+            
+            result = list_directory(tmpdir)
+            
+            assert result["success"] is True
+            names = [e["name"] for e in result["entries"]]
+            assert names == ["alpha.txt", "beta.txt", "zebra.txt"]
+    
+    def test_list_directory_with_hidden_files(self):
+        """Test listing directory with hidden files (dotfiles)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "visible.txt").write_text("visible")
+            Path(tmpdir, ".hidden").write_text("hidden")
+            
+            result = list_directory(tmpdir)
+            
+            assert result["success"] is True
+            names = [e["name"] for e in result["entries"]]
+            assert ".hidden" in names
+            assert "visible.txt" in names
+    
+    def test_list_directory_recursive_depth(self):
+        """Test recursive listing goes multiple levels deep."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create deep structure
+            level1 = os.path.join(tmpdir, "level1")
+            level2 = os.path.join(level1, "level2")
+            level3 = os.path.join(level2, "level3")
+            os.makedirs(level3)
+            
+            Path(level3, "deep.txt").write_text("deep")
+            
+            result = list_directory(tmpdir, recursive=True)
+            
+            assert result["success"] is True
+            paths = [e["path"] for e in result["entries"]]
+            
+            # Should contain the deep file
+            assert any("level3" in p and "deep.txt" in p for p in paths)
+    
+    def test_list_current_directory(self):
+        """Test listing current directory using '.'"""
+        # List the project directory
+        result = list_directory(".")
+        
+        assert result["success"] is True
+        assert result["total_entries"] > 0
+        
+        # Should find common project files/dirs
+        names = [e["name"] for e in result["entries"]]
+        assert "agent" in names or "tests" in names or "README.md" in names
+    
+    def test_list_directory_entry_structure(self):
+        """Test that entries have correct structure."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "test.txt").write_text("content")
+            os.makedirs(os.path.join(tmpdir, "testdir"))
+            
+            result = list_directory(tmpdir)
+            
+            assert result["success"] is True
+            
+            for entry in result["entries"]:
+                assert "name" in entry
+                assert "path" in entry
+                assert "type" in entry
+                assert "size" in entry
+                assert entry["type"] in ["file", "directory", "other"]
+    
+    def test_list_directory_with_various_extensions(self):
+        """Test listing files with various extensions."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            extensions = [".txt", ".py", ".json", ".md", ".log"]
+            for ext in extensions:
+                Path(tmpdir, f"file{ext}").write_text("content")
+            
+            result = list_directory(tmpdir)
+            
+            assert result["success"] is True
+            assert result["files"] == len(extensions)
+            
+            names = [e["name"] for e in result["entries"]]
+            for ext in extensions:
+                assert any(name.endswith(ext) for name in names)
+    
+    def test_list_large_directory(self):
+        """Test listing directory with many files."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create 50 files
+            for i in range(50):
+                Path(tmpdir, f"file{i:03d}.txt").write_text(f"content {i}")
+            
+            result = list_directory(tmpdir)
+            
+            assert result["success"] is True
+            assert result["files"] == 50
+            assert len(result["entries"]) == 50
