@@ -13,9 +13,11 @@ from agent.tool_executor import (
     edit_file,
     list_directory,
     grep_search,
+    semantic_search,
     execute_tool,
     ToolExecutionError
 )
+
 
 
 class TestRunBashCommand:
@@ -1344,5 +1346,209 @@ class TestGrepSearch:
             
             assert result["success"] is True
             assert result["total_matches"] == 2
+        finally:
+            os.unlink(temp_path)
+
+
+class TestSemanticSearch:
+    """Tests for semantic_search function."""
+    
+    def test_basic_search(self):
+        """Test basic semantic search in current directory."""
+        result = semantic_search("test functions", path="tests")
+        
+        assert result["success"] is True
+        assert "results" in result
+        assert "query" in result
+        assert result["query"] == "test functions"
+        assert isinstance(result["results"], list)
+    
+    def test_search_with_results(self):
+        """Test semantic search that should return results."""
+        result = semantic_search("bash command execution", path="agent")
+        
+        assert result["success"] is True
+        assert len(result["results"]) > 0
+        
+        # Check result structure
+        first_result = result["results"][0]
+        assert "file" in first_result
+        assert "content" in first_result
+        assert "similarity" in first_result
+        assert "start_line" in first_result
+        assert "end_line" in first_result
+        
+        # Similarity should be between 0 and 1
+        assert 0 <= first_result["similarity"] <= 1
+    
+    def test_search_nonexistent_path(self):
+        """Test semantic search with non-existent path."""
+        result = semantic_search("test", path="/nonexistent/path")
+        
+        assert result["success"] is False
+        assert "error" in result
+        assert "does not exist" in result["error"]
+    
+    def test_search_with_limit(self):
+        """Test semantic search with result limit."""
+        result = semantic_search("function", path="agent", limit=2)
+        
+        assert result["success"] is True
+        assert len(result["results"]) <= 2
+    
+    def test_search_single_file(self):
+        """Test semantic search on a single file."""
+        result = semantic_search("OllamaClient", path="agent/llm.py")
+        
+        assert result["success"] is True
+        if result["results"]:
+            assert all("agent/llm.py" in r["file"] for r in result["results"])
+    
+    def test_search_filters_low_similarity(self):
+        """Test that very low similarity results are filtered."""
+        result = semantic_search("xyzabc123impossible", path="agent")
+        
+        assert result["success"] is True
+        # Should either have no results or only results above similarity threshold
+        for res in result["results"]:
+            assert res["similarity"] > 0.1
+    
+    def test_search_with_default_path(self):
+        """Test semantic search with default path (current directory)."""
+        result = semantic_search("import", limit=3)
+        
+        assert result["success"] is True
+        assert "results" in result
+    
+    def test_search_result_fields(self):
+        """Test that search results have all expected fields."""
+        result = semantic_search("test class", path="tests", limit=1)
+        
+        assert result["success"] is True
+        assert "results" in result
+        assert "query" in result
+        assert "total_results" in result
+        assert "files_searched" in result
+        
+        if result["results"]:
+            res = result["results"][0]
+            required_fields = ["file", "content", "similarity", "start_line", "end_line"]
+            for field in required_fields:
+                assert field in res
+    
+    def test_search_in_temp_file(self):
+        """Test semantic search on a temporary file."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.py') as f:
+            f.write("def calculate_fibonacci(n):\n")
+            f.write("    if n <= 1:\n")
+            f.write("        return n\n")
+            f.write("    return calculate_fibonacci(n-1) + calculate_fibonacci(n-2)\n")
+            temp_path = f.name
+        
+        try:
+            result = semantic_search("recursive function", path=temp_path)
+            
+            assert result["success"] is True
+            if result["results"]:
+                assert temp_path in result["results"][0]["file"]
+        finally:
+            os.unlink(temp_path)
+    
+    def test_search_skips_binary_files(self):
+        """Test that semantic search handles binary files gracefully."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create a text file
+            text_file = os.path.join(temp_dir, "test.py")
+            with open(text_file, 'w') as f:
+                f.write("def test():\n    pass\n")
+            
+            # Create a binary file
+            binary_file = os.path.join(temp_dir, "test.bin")
+            with open(binary_file, 'wb') as f:
+                f.write(b'\x00\x01\x02\x03')
+            
+            result = semantic_search("test", path=temp_dir)
+            
+            # Should succeed even with binary files present
+            assert result["success"] is True
+    
+    def test_search_empty_directory(self):
+        """Test semantic search in empty directory."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = semantic_search("test", path=temp_dir)
+            
+            assert result["success"] is True
+            assert result["total_results"] == 0
+            assert "message" in result
+    
+    def test_search_skips_common_directories(self):
+        """Test that semantic search skips .git, node_modules, etc."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create a .git directory
+            git_dir = os.path.join(temp_dir, ".git")
+            os.makedirs(git_dir)
+            
+            git_file = os.path.join(git_dir, "config")
+            with open(git_file, 'w') as f:
+                f.write("test content")
+            
+            # Create a normal file
+            normal_file = os.path.join(temp_dir, "test.py")
+            with open(normal_file, 'w') as f:
+                f.write("def test(): pass")
+            
+            result = semantic_search("test", path=temp_dir)
+            
+            assert result["success"] is True
+            # Results should not include files from .git
+            for res in result["results"]:
+                assert ".git" not in res["file"]
+    
+    def test_search_only_text_extensions(self):
+        """Test that semantic search only searches text file extensions."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create various files
+            for ext in ['.py', '.txt', '.md', '.jpg', '.png']:
+                file_path = os.path.join(temp_dir, f"test{ext}")
+                with open(file_path, 'w' if ext != '.jpg' and ext != '.png' else 'wb') as f:
+                    if ext == '.jpg' or ext == '.png':
+                        f.write(b'\x00\x01\x02')
+                    else:
+                        f.write("test content")
+            
+            result = semantic_search("test", path=temp_dir)
+            
+            assert result["success"] is True
+            # Results should only include text files
+            for res in result["results"]:
+                assert not res["file"].endswith(('.jpg', '.png'))
+    
+    def test_search_similarity_ordering(self):
+        """Test that results are ordered by similarity (highest first)."""
+        result = semantic_search("HTTP request client", path="agent", limit=3)
+        
+        assert result["success"] is True
+        if len(result["results"]) > 1:
+            similarities = [r["similarity"] for r in result["results"]]
+            # Check that similarities are in descending order
+            assert similarities == sorted(similarities, reverse=True)
+    
+    def test_search_chunks_files(self):
+        """Test that large files are chunked properly."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.py') as f:
+            # Write 50 lines
+            for i in range(50):
+                f.write(f"# Line {i}\n")
+                if i == 25:
+                    f.write("def important_function():\n    pass\n")
+            temp_path = f.name
+        
+        try:
+            result = semantic_search("important function", path=temp_path)
+            
+            assert result["success"] is True
+            if result["results"]:
+                # Should find chunks within the file
+                assert result["results"][0]["start_line"] < result["results"][0]["end_line"]
         finally:
             os.unlink(temp_path)

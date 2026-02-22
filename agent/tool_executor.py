@@ -592,8 +592,139 @@ def semantic_search(query: str, path: Optional[str] = None,
             - query: the query that was searched
             - error: error message if failed
     """
-    # TODO: Implement in next step
-    raise NotImplementedError("semantic_search not yet implemented")
+    try:
+        # Import sentence transformers
+        try:
+            from sentence_transformers import SentenceTransformer
+            import numpy as np
+        except ImportError:
+            return {
+                "success": False,
+                "results": [],
+                "query": query,
+                "error": "sentence-transformers not installed. Run: pip install sentence-transformers"
+            }
+        
+        # Use default path if not provided
+        if path is None:
+            path = "."
+        
+        # Check if path exists
+        if not os.path.exists(path):
+            return {
+                "success": False,
+                "results": [],
+                "query": query,
+                "error": f"Path does not exist: {path}"
+            }
+        
+        # Load a lightweight model (cached after first use)
+        model = SentenceTransformer('all-MiniLM-L6-v2')
+        
+        # Collect text chunks from files
+        chunks = []
+        
+        if os.path.isfile(path):
+            files_to_search = [path]
+        else:
+            files_to_search = []
+            # Only search text files (common code extensions)
+            text_extensions = {'.py', '.js', '.ts', '.java', '.cpp', '.c', '.h', 
+                             '.go', '.rs', '.rb', '.php', '.txt', '.md', '.json',
+                             '.yaml', '.yml', '.xml', '.html', '.css', '.sh'}
+            
+            for root, dirs, files in os.walk(path):
+                # Skip common non-code directories
+                dirs[:] = [d for d in dirs if d not in {'.git', '__pycache__', 'node_modules', 
+                                                         '.venv', 'venv', 'env', 'dist', 'build'}]
+                
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    ext = os.path.splitext(file)[1].lower()
+                    
+                    if ext in text_extensions:
+                        files_to_search.append(file_path)
+        
+        # Read and chunk files
+        for file_path in files_to_search[:100]:  # Limit to 100 files for performance
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # Split into chunks (by function/class or fixed size)
+                lines = content.split('\n')
+                
+                # Create chunks of ~20 lines each
+                chunk_size = 20
+                for i in range(0, len(lines), chunk_size):
+                    chunk_lines = lines[i:i+chunk_size]
+                    chunk_text = '\n'.join(chunk_lines)
+                    
+                    if chunk_text.strip():  # Skip empty chunks
+                        chunks.append({
+                            'file': file_path,
+                            'start_line': i + 1,
+                            'end_line': min(i + chunk_size, len(lines)),
+                            'content': chunk_text
+                        })
+            
+            except (UnicodeDecodeError, PermissionError):
+                continue
+        
+        if not chunks:
+            return {
+                "success": True,
+                "results": [],
+                "query": query,
+                "total_results": 0,
+                "message": "No text files found to search"
+            }
+        
+        # Encode query
+        query_embedding = model.encode(query, convert_to_tensor=False)
+        
+        # Encode all chunks
+        chunk_texts = [c['content'] for c in chunks]
+        chunk_embeddings = model.encode(chunk_texts, convert_to_tensor=False)
+        
+        # Calculate cosine similarities
+        similarities = np.dot(chunk_embeddings, query_embedding) / (
+            np.linalg.norm(chunk_embeddings, axis=1) * np.linalg.norm(query_embedding)
+        )
+        
+        # Get top results
+        max_results = limit if limit else 5
+        top_indices = np.argsort(similarities)[::-1][:max_results]
+        
+        results = []
+        for idx in top_indices:
+            similarity = float(similarities[idx])
+            # Only include results with reasonable similarity
+            if similarity > 0.1:  # Threshold to filter very low matches
+                chunk = chunks[idx]
+                results.append({
+                    'file': chunk['file'],
+                    'start_line': chunk['start_line'],
+                    'end_line': chunk['end_line'],
+                    'content': chunk['content'],
+                    'similarity': round(similarity, 3)
+                })
+        
+        return {
+            "success": True,
+            "results": results,
+            "query": query,
+            "total_results": len(results),
+            "files_searched": len(files_to_search)
+        }
+    
+    except Exception as e:
+        return {
+            "success": False,
+            "results": [],
+            "query": query,
+            "error": f"Error performing semantic search: {str(e)}"
+        }
 
 
 def web_search(query: str, num_results: int = 5) -> Dict[str, Any]:
