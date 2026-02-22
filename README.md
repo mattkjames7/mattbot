@@ -74,7 +74,36 @@ pytest tests/test_tool_executor.py -v
 pytest tests/ -k "not integration"
 ```
 
-## Usage Example
+## Usage
+
+### Interactive CLI
+
+The easiest way to use the agent is through the interactive CLI:
+
+```bash
+# Start the agent in the current directory
+agent
+
+# Use a different model
+agent --model llama2
+```
+
+The CLI provides an interactive chat interface where:
+- The agent can call tools automatically based on your requests
+- All file operations work from your current working directory
+- Press **Ctrl+D** to exit gracefully
+- Tool executions are displayed in real-time
+
+Example session:
+```
+You: List all Python files in this directory
+
+🔧 Calling tool: list_directory
+   Arguments: {...}
+✓ Tool completed successfully
+```
+
+### Programmatic Usage
 
 ```python
 from agent.llm import OllamaClient
@@ -84,7 +113,7 @@ from agent.tools import TOOLS
 # Initialize LLM client
 client = OllamaClient()
 
-# Execute a tool
+# Execute a tool directly
 result = execute_tool('semantic_search', 
                      query='HTTP client code', 
                      path='agent', 
@@ -100,8 +129,8 @@ response = client.chat(
 
 ## Architecture
 
+- `agent/cli.py` - Interactive CLI interface
 - `agent/llm.py` - OllamaClient for API communication
-- `agent/tools.py` - Tool definitions in OpenAI format
 - `agent/tool_executor.py` - Tool implementations
 - `tests/` - Comprehensive test suite
 
