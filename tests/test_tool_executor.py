@@ -12,6 +12,7 @@ from agent.tool_executor import (
     write_file,
     edit_file,
     list_directory,
+    grep_search,
     execute_tool,
     ToolExecutionError
 )
@@ -1058,3 +1059,290 @@ class TestListDirectory:
             assert result["success"] is True
             assert result["files"] == 50
             assert len(result["entries"]) == 50
+
+
+class TestGrepSearch:
+    """Tests for grep_search tool."""
+    
+    def test_search_single_file(self):
+        """Test searching a single file."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("line 1\ntarget line\nline 3\n")
+            temp_path = f.name
+        
+        try:
+            result = grep_search("target", temp_path)
+            
+            assert result["success"] is True
+            assert result["total_matches"] == 1
+            assert len(result["matches"]) == 1
+            
+            match = result["matches"][0]
+            assert match["line_number"] == 2
+            assert "target" in match["line_content"]
+        finally:
+            os.unlink(temp_path)
+    
+    def test_search_directory(self):
+        """Test searching all files in a directory."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "file1.txt").write_text("contains target\n")
+            Path(tmpdir, "file2.txt").write_text("no match here\n")
+            Path(tmpdir, "file3.txt").write_text("another target\n")
+            
+            result = grep_search("target", tmpdir)
+            
+            assert result["success"] is True
+            assert result["total_matches"] == 2
+            assert result["files_searched"] == 3
+    
+    def test_search_case_insensitive(self):
+        """Test case-insensitive search (default)."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("TARGET\ntarget\nTarget\n")
+            temp_path = f.name
+        
+        try:
+            result = grep_search("target", temp_path, case_sensitive=False)
+            
+            assert result["success"] is True
+            assert result["total_matches"] == 3
+            assert result["case_sensitive"] is False
+        finally:
+            os.unlink(temp_path)
+    
+    def test_search_case_sensitive(self):
+        """Test case-sensitive search."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("TARGET\ntarget\nTarget\n")
+            temp_path = f.name
+        
+        try:
+            result = grep_search("target", temp_path, case_sensitive=True)
+            
+            assert result["success"] is True
+            assert result["total_matches"] == 1
+            assert result["case_sensitive"] is True
+        finally:
+            os.unlink(temp_path)
+    
+    def test_search_with_file_pattern(self):
+        """Test searching with file pattern filter."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "file1.py").write_text("def target():\n    pass\n")
+            Path(tmpdir, "file2.txt").write_text("target\n")
+            Path(tmpdir, "file3.py").write_text("class Target:\n    pass\n")
+            
+            result = grep_search("target", tmpdir, file_pattern="*.py")
+            
+            assert result["success"] is True
+            assert result["files_searched"] == 2
+            
+            # Should only find matches in .py files
+            for match in result["matches"]:
+                assert match["file"].endswith(".py")
+    
+    def test_search_regex_pattern(self):
+        """Test searching with regex pattern."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("test123\ntest456\ntest\n")
+            temp_path = f.name
+        
+        try:
+            result = grep_search(r"test\d+", temp_path)
+            
+            assert result["success"] is True
+            assert result["total_matches"] == 2
+        finally:
+            os.unlink(temp_path)
+    
+    def test_search_multiple_matches_per_line(self):
+        """Test finding multiple occurrences in same line."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("foo foo foo\n")
+            temp_path = f.name
+        
+        try:
+            result = grep_search("foo", temp_path)
+            
+            assert result["success"] is True
+            # Should match the line (once per line, not per occurrence)
+            assert result["total_matches"] == 1
+        finally:
+            os.unlink(temp_path)
+    
+    def test_search_no_matches(self):
+        """Test searching when pattern doesn't match."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("line 1\nline 2\nline 3\n")
+            temp_path = f.name
+        
+        try:
+            result = grep_search("nomatch", temp_path)
+            
+            assert result["success"] is True
+            assert result["total_matches"] == 0
+            assert result["matches"] == []
+        finally:
+            os.unlink(temp_path)
+    
+    def test_search_nonexistent_path(self):
+        """Test searching a path that doesn't exist."""
+        result = grep_search("pattern", "/nonexistent/path")
+        
+        assert result["success"] is False
+        assert "does not exist" in result["error"]
+    
+    def test_search_invalid_regex(self):
+        """Test with invalid regex pattern."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("content\n")
+            temp_path = f.name
+        
+        try:
+            result = grep_search("[invalid(", temp_path)
+            
+            assert result["success"] is False
+            assert "Invalid regex" in result["error"]
+        finally:
+            os.unlink(temp_path)
+    
+    def test_search_match_info(self):
+        """Test that match info contains all required fields."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("line 1\ntarget line\nline 3\n")
+            temp_path = f.name
+        
+        try:
+            result = grep_search("target", temp_path)
+            
+            assert result["success"] is True
+            match = result["matches"][0]
+            
+            assert "file" in match
+            assert "line_number" in match
+            assert "line_content" in match
+            assert "column" in match
+            assert match["line_number"] == 2
+            assert match["column"] >= 0
+        finally:
+            os.unlink(temp_path)
+    
+    def test_search_multiline_file(self):
+        """Test searching in file with many lines."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            lines = [f"line {i}\n" for i in range(100)]
+            lines[25] = "special target line\n"
+            lines[75] = "another target here\n"
+            f.writelines(lines)
+            temp_path = f.name
+        
+        try:
+            result = grep_search("target", temp_path)
+            
+            assert result["success"] is True
+            assert result["total_matches"] == 2
+            assert result["matches"][0]["line_number"] == 26  # Line 25 (0-indexed)
+            assert result["matches"][1]["line_number"] == 76
+        finally:
+            os.unlink(temp_path)
+    
+    def test_search_with_special_chars(self):
+        """Test searching for special characters."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write('line with "quotes"\n')
+            temp_path = f.name
+        
+        try:
+            result = grep_search('"quotes"', temp_path)
+            
+            assert result["success"] is True
+            assert result["total_matches"] == 1
+        finally:
+            os.unlink(temp_path)
+    
+    def test_search_word_boundary(self):
+        """Test regex word boundary search."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("test testing tester\n")
+            temp_path = f.name
+        
+        try:
+            # Should only match whole word "test"
+            result = grep_search(r"\btest\b", temp_path)
+            
+            assert result["success"] is True
+            assert result["total_matches"] == 1
+        finally:
+            os.unlink(temp_path)
+    
+    def test_search_nested_directories(self):
+        """Test searching in nested directory structure."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create nested structure
+            subdir = os.path.join(tmpdir, "subdir")
+            os.makedirs(subdir)
+            
+            Path(tmpdir, "root.txt").write_text("target in root\n")
+            Path(subdir, "sub.txt").write_text("target in subdir\n")
+            
+            result = grep_search("target", tmpdir)
+            
+            assert result["success"] is True
+            assert result["total_matches"] == 2
+            assert result["files_searched"] == 2
+    
+    def test_search_empty_file(self):
+        """Test searching an empty file."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            temp_path = f.name
+        
+        try:
+            result = grep_search("pattern", temp_path)
+            
+            assert result["success"] is True
+            assert result["total_matches"] == 0
+        finally:
+            os.unlink(temp_path)
+    
+    def test_search_skips_binary_files(self):
+        """Test that binary files are skipped."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a text file and a binary file
+            Path(tmpdir, "text.txt").write_text("target\n")
+            Path(tmpdir, "binary.bin").write_bytes(b"\x00\x01\x02target\xff\xfe")
+            
+            result = grep_search("target", tmpdir)
+            
+            assert result["success"] is True
+            # Should find match in text file but skip binary file
+            assert result["files_searched"] >= 1
+    
+    def test_search_column_position(self):
+        """Test that column position is correct."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("prefix target suffix\n")
+            temp_path = f.name
+        
+        try:
+            result = grep_search("target", temp_path)
+            
+            assert result["success"] is True
+            match = result["matches"][0]
+            assert match["column"] == 7  # "target" starts at position 7
+        finally:
+            os.unlink(temp_path)
+    
+    def test_search_python_function(self):
+        """Test searching for Python function definition."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.py') as f:
+            f.write("def hello():\n    print('hi')\n\ndef world():\n    pass\n")
+            temp_path = f.name
+        
+        try:
+            result = grep_search(r"^def ", temp_path)
+            
+            assert result["success"] is True
+            assert result["total_matches"] == 2
+        finally:
+            os.unlink(temp_path)

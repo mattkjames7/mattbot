@@ -6,6 +6,7 @@ This module contains the actual implementations of the tools defined in tools.py
 
 import subprocess
 import os
+import re
 from typing import Dict, Any, Optional
 
 
@@ -478,8 +479,100 @@ def grep_search(pattern: str, path: str, file_pattern: Optional[str] = None,
             - pattern: the pattern that was searched
             - error: error message if failed
     """
-    # TODO: Implement in next step
-    raise NotImplementedError("grep_search not yet implemented")
+    try:
+        # Check if path exists
+        if not os.path.exists(path):
+            return {
+                "success": False,
+                "matches": [],
+                "pattern": pattern,
+                "error": f"Path does not exist: {path}"
+            }
+        
+        # Compile regex pattern
+        flags = 0 if case_sensitive else re.IGNORECASE
+        try:
+            regex = re.compile(pattern, flags)
+        except re.error as e:
+            return {
+                "success": False,
+                "matches": [],
+                "pattern": pattern,
+                "error": f"Invalid regex pattern: {str(e)}"
+            }
+        
+        matches = []
+        files_searched = 0
+        
+        # Determine files to search
+        if os.path.isfile(path):
+            # Single file
+            files_to_search = [path]
+        else:
+            # Directory - find all files
+            files_to_search = []
+            for root, dirs, files in os.walk(path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    
+                    # Apply file pattern filter if provided
+                    if file_pattern:
+                        import fnmatch
+                        if not fnmatch.fnmatch(file, file_pattern):
+                            continue
+                    
+                    files_to_search.append(file_path)
+        
+        # Search each file
+        for file_path in files_to_search:
+            try:
+                # Skip binary files by trying to read as text
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                
+                files_searched += 1
+                
+                # Search each line
+                for line_num, line in enumerate(lines, start=1):
+                    if regex.search(line):
+                        matches.append({
+                            "file": file_path,
+                            "line_number": line_num,
+                            "line_content": line.rstrip('\n\r'),
+                            "column": regex.search(line).start() if regex.search(line) else 0
+                        })
+            
+            except (UnicodeDecodeError, PermissionError):
+                # Skip files that can't be read as text or don't have permissions
+                continue
+            except Exception:
+                # Skip any other problematic files
+                continue
+        
+        return {
+            "success": True,
+            "matches": matches,
+            "pattern": pattern,
+            "total_matches": len(matches),
+            "files_searched": files_searched,
+            "case_sensitive": case_sensitive
+        }
+    
+    except PermissionError:
+        return {
+            "success": False,
+            "matches": [],
+            "pattern": pattern,
+            "error": f"Permission denied: {path}"
+        }
+    
+    except Exception as e:
+        return {
+            "success": False,
+            "matches": [],
+            "pattern": pattern,
+            "error": f"Error searching: {str(e)}"
+        }
 
 
 def semantic_search(query: str, path: Optional[str] = None, 
