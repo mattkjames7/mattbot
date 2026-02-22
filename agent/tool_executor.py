@@ -268,8 +268,65 @@ def edit_file(file_path: str, old_content: str, new_content: str) -> Dict[str, A
             - file_path: the file path that was edited
             - error: error message if failed
     """
-    # TODO: Implement in next step
-    raise NotImplementedError("edit_file not yet implemented")
+    try:
+        # Check if file exists
+        if not os.path.isfile(file_path):
+            return {
+                "success": False,
+                "file_path": file_path,
+                "error": f"File not found: {file_path}"
+            }
+        
+        # Read the current content
+        with open(file_path, 'r', encoding='utf-8') as f:
+            current_content = f.read()
+        
+        # Check if old_content exists in the file
+        if old_content not in current_content:
+            return {
+                "success": False,
+                "file_path": file_path,
+                "error": "Old content not found in file. Make sure the content matches exactly."
+            }
+        
+        # Count occurrences
+        occurrences = current_content.count(old_content)
+        
+        # Replace old content with new content
+        new_file_content = current_content.replace(old_content, new_content)
+        
+        # Write back to file
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(new_file_content)
+        
+        return {
+            "success": True,
+            "file_path": file_path,
+            "replacements_made": occurrences,
+            "old_content_length": len(old_content),
+            "new_content_length": len(new_content)
+        }
+    
+    except UnicodeDecodeError:
+        return {
+            "success": False,
+            "file_path": file_path,
+            "error": "File contains non-UTF-8 content and cannot be edited as text"
+        }
+    
+    except PermissionError:
+        return {
+            "success": False,
+            "file_path": file_path,
+            "error": f"Permission denied: {file_path}"
+        }
+    
+    except Exception as e:
+        return {
+            "success": False,
+            "file_path": file_path,
+            "error": f"Error editing file: {str(e)}"
+        }
 
 
 def list_directory(path: str, recursive: bool = False) -> Dict[str, Any]:

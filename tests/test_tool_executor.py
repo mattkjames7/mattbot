@@ -10,6 +10,7 @@ from agent.tool_executor import (
     run_bash_command,
     read_file,
     write_file,
+    edit_file,
     execute_tool,
     ToolExecutionError
 )
@@ -531,3 +532,293 @@ class TestWriteFile:
             read_result = read_file(file_path)
             assert read_result["success"] is True
             assert read_result["content"] == original_content
+
+
+class TestEditFile:
+    """Tests for edit_file tool."""
+    
+    def test_edit_single_line(self):
+        """Test editing a single line in a file."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("line 1\nline 2\nline 3\n")
+            temp_path = f.name
+        
+        try:
+            result = edit_file(temp_path, "line 2", "modified line 2")
+            
+            assert result["success"] is True
+            assert result["replacements_made"] == 1
+            
+            # Verify the edit
+            with open(temp_path, 'r') as f:
+                content = f.read()
+                assert content == "line 1\nmodified line 2\nline 3\n"
+        finally:
+            os.unlink(temp_path)
+    
+    def test_edit_multiple_lines(self):
+        """Test editing multiple lines at once."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("line 1\nline 2\nline 3\nline 4\n")
+            temp_path = f.name
+        
+        try:
+            result = edit_file(temp_path, "line 2\nline 3", "new line 2\nnew line 3")
+            
+            assert result["success"] is True
+            assert result["replacements_made"] == 1
+            
+            with open(temp_path, 'r') as f:
+                content = f.read()
+                assert content == "line 1\nnew line 2\nnew line 3\nline 4\n"
+        finally:
+            os.unlink(temp_path)
+    
+    def test_edit_multiple_occurrences(self):
+        """Test editing when old content appears multiple times."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("foo bar foo baz foo\n")
+            temp_path = f.name
+        
+        try:
+            result = edit_file(temp_path, "foo", "FOO")
+            
+            assert result["success"] is True
+            assert result["replacements_made"] == 3
+            
+            with open(temp_path, 'r') as f:
+                content = f.read()
+                assert content == "FOO bar FOO baz FOO\n"
+        finally:
+            os.unlink(temp_path)
+    
+    def test_edit_entire_file(self):
+        """Test replacing entire file content."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            original = "This is the entire content\n"
+            f.write(original)
+            temp_path = f.name
+        
+        try:
+            result = edit_file(temp_path, original, "Completely new content\n")
+            
+            assert result["success"] is True
+            
+            with open(temp_path, 'r') as f:
+                assert f.read() == "Completely new content\n"
+        finally:
+            os.unlink(temp_path)
+    
+    def test_edit_add_content(self):
+        """Test adding content (replacing with longer content)."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("short\n")
+            temp_path = f.name
+        
+        try:
+            result = edit_file(temp_path, "short", "much longer content here")
+            
+            assert result["success"] is True
+            assert result["new_content_length"] > result["old_content_length"]
+            
+            with open(temp_path, 'r') as f:
+                assert f.read() == "much longer content here\n"
+        finally:
+            os.unlink(temp_path)
+    
+    def test_edit_remove_content(self):
+        """Test removing content (replacing with shorter content)."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("this is a long line\n")
+            temp_path = f.name
+        
+        try:
+            result = edit_file(temp_path, "this is a long line", "short")
+            
+            assert result["success"] is True
+            assert result["new_content_length"] < result["old_content_length"]
+            
+            with open(temp_path, 'r') as f:
+                assert f.read() == "short\n"
+        finally:
+            os.unlink(temp_path)
+    
+    def test_edit_delete_content(self):
+        """Test deleting content (replacing with empty string)."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("line 1\nDELETE ME\nline 3\n")
+            temp_path = f.name
+        
+        try:
+            result = edit_file(temp_path, "DELETE ME\n", "")
+            
+            assert result["success"] is True
+            
+            with open(temp_path, 'r') as f:
+                assert f.read() == "line 1\nline 3\n"
+        finally:
+            os.unlink(temp_path)
+    
+    def test_edit_nonexistent_file(self):
+        """Test editing a file that doesn't exist."""
+        result = edit_file("/nonexistent/file.txt", "old", "new")
+        
+        assert result["success"] is False
+        assert "File not found" in result["error"]
+    
+    def test_edit_content_not_found(self):
+        """Test when old content is not in the file."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("line 1\nline 2\n")
+            temp_path = f.name
+        
+        try:
+            result = edit_file(temp_path, "line 99", "new line")
+            
+            assert result["success"] is False
+            assert "Old content not found" in result["error"]
+            
+            # Verify file wasn't changed
+            with open(temp_path, 'r') as f:
+                assert f.read() == "line 1\nline 2\n"
+        finally:
+            os.unlink(temp_path)
+    
+    def test_edit_case_sensitive(self):
+        """Test that editing is case sensitive."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("Hello World\n")
+            temp_path = f.name
+        
+        try:
+            result = edit_file(temp_path, "hello world", "Hi Earth")
+            
+            assert result["success"] is False
+            assert "Old content not found" in result["error"]
+        finally:
+            os.unlink(temp_path)
+    
+    def test_edit_with_whitespace(self):
+        """Test editing content with whitespace."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("  indented\n\tindented with tab\n")
+            temp_path = f.name
+        
+        try:
+            result = edit_file(temp_path, "  indented", "no indent")
+            
+            assert result["success"] is True
+            
+            with open(temp_path, 'r') as f:
+                content = f.read()
+                assert "no indent" in content
+                assert "\tindented with tab" in content
+        finally:
+            os.unlink(temp_path)
+    
+    def test_edit_python_function(self):
+        """Test editing Python code."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.py') as f:
+            f.write('def hello():\n    print("Hello")\n')
+            temp_path = f.name
+        
+        try:
+            result = edit_file(
+                temp_path,
+                'print("Hello")',
+                'print("Hello, World!")'
+            )
+            
+            assert result["success"] is True
+            
+            with open(temp_path, 'r') as f:
+                content = f.read()
+                assert 'print("Hello, World!")' in content
+        finally:
+            os.unlink(temp_path)
+    
+    def test_edit_json_value(self):
+        """Test editing JSON content."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+            f.write('{\n  "key": "old_value"\n}\n')
+            temp_path = f.name
+        
+        try:
+            result = edit_file(temp_path, '"old_value"', '"new_value"')
+            
+            assert result["success"] is True
+            
+            with open(temp_path, 'r') as f:
+                content = f.read()
+                assert '"new_value"' in content
+        finally:
+            os.unlink(temp_path)
+    
+    def test_edit_with_special_chars(self):
+        """Test editing content with special characters."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write('text with "quotes" and \\backslash\n')
+            temp_path = f.name
+        
+        try:
+            result = edit_file(temp_path, '"quotes"', "'quotes'")
+            
+            assert result["success"] is True
+            
+            with open(temp_path, 'r') as f:
+                content = f.read()
+                assert "'quotes'" in content
+        finally:
+            os.unlink(temp_path)
+    
+    def test_edit_unicode_content(self):
+        """Test editing unicode content."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt', encoding='utf-8') as f:
+            f.write("Hello 世界\n")
+            temp_path = f.name
+        
+        try:
+            result = edit_file(temp_path, "世界", "World")
+            
+            assert result["success"] is True
+            
+            with open(temp_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                assert "Hello World" in content
+        finally:
+            os.unlink(temp_path)
+    
+    def test_edit_preserves_surrounding_content(self):
+        """Test that edit only changes specified content."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("before\ntarget\nafter\n")
+            temp_path = f.name
+        
+        try:
+            result = edit_file(temp_path, "target", "modified")
+            
+            assert result["success"] is True
+            
+            with open(temp_path, 'r') as f:
+                content = f.read()
+                assert content == "before\nmodified\nafter\n"
+        finally:
+            os.unlink(temp_path)
+    
+    def test_edit_empty_replacement(self):
+        """Test replacing content with empty string."""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write("keep this\nremove this\nkeep this too\n")
+            temp_path = f.name
+        
+        try:
+            result = edit_file(temp_path, "remove this\n", "")
+            
+            assert result["success"] is True
+            assert result["new_content_length"] == 0
+            
+            with open(temp_path, 'r') as f:
+                content = f.read()
+                assert content == "keep this\nkeep this too\n"
+        finally:
+            os.unlink(temp_path)
