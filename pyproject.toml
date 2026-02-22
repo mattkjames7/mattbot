@@ -3,9 +3,9 @@ requires = ["setuptools>=65.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-oss"
+name = "mattbot"
 version = "0.1.0"
-description = "An AI agent system with tool-calling capabilities, similar to Copilot/Cursor"
+description = "MattBot - An AI agent system with tool-calling capabilities"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}
@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [project.scripts]
-agent = "agent.cli:main"
+mattbot = "mattbot.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -46,7 +46,7 @@ Issues = "https://github.com/USERNAME/REPO/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agent*"]
+include = ["mattbot*"]
 exclude = ["tests*", "env*", ".github*"]
 
 [tool.pytest.ini_options]
@@ -59,7 +59,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["agent"]
+source = ["mattbot"]
 omit = ["*/tests/*", "*/test_*.py"]
 
 [tool.coverage.report]

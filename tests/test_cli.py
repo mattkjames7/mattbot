@@ -1,6 +1,6 @@
 """Tests for the CLI module."""
 import pytest
-from agent.cli import AgentCLI
+from mattbot.cli import AgentCLI
 
 
 class TestAgentCLI:

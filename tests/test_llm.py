@@ -6,7 +6,7 @@ import json
 import os
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-from agent.llm import OllamaClient
+from mattbot.llm import OllamaClient
 
 
 class TestOllamaClient:
@@ -30,7 +30,7 @@ class TestOllamaClient:
         client = OllamaClient(base_url="http://localhost:11434/")
         assert client.base_url == "http://localhost:11434"
     
-    @patch('agent.llm.requests.post')
+    @patch('mattbot.llm.requests.post')
     def test_chat_basic(self, mock_post):
         """Test basic chat request without streaming."""
         # Setup mock response
@@ -57,7 +57,7 @@ class TestOllamaClient:
         assert call_args[1]['json']['stream'] is False
         assert response['message']['content'] == "Hello! How can I help you?"
     
-    @patch('agent.llm.requests.post')
+    @patch('mattbot.llm.requests.post')
     def test_chat_with_temperature(self, mock_post):
         """Test chat request with temperature parameter."""
         mock_response = Mock()
@@ -71,7 +71,7 @@ class TestOllamaClient:
         call_args = mock_post.call_args
         assert call_args[1]['json']['temperature'] == 0.7
     
-    @patch('agent.llm.requests.post')
+    @patch('mattbot.llm.requests.post')
     def test_chat_with_max_tokens(self, mock_post):
         """Test chat request with max_tokens parameter."""
         mock_response = Mock()
@@ -85,7 +85,7 @@ class TestOllamaClient:
         call_args = mock_post.call_args
         assert call_args[1]['json']['max_tokens'] == 100
     
-    @patch('agent.llm.requests.post')
+    @patch('mattbot.llm.requests.post')
     def test_chat_streaming(self, mock_post):
         """Test streaming chat request."""
         # Mock streaming response
@@ -115,7 +115,7 @@ class TestOllamaClient:
         assert call_args[1]['json']['stream'] is True
         assert call_args[1]['stream'] is True
     
-    @patch('agent.llm.requests.post')
+    @patch('mattbot.llm.requests.post')
     def test_generate_basic(self, mock_post):
         """Test basic generate request."""
         mock_response = Mock()
@@ -136,7 +136,7 @@ class TestOllamaClient:
         assert call_args[1]['json']['stream'] is False
         assert response['response'] == "This is a generated response."
     
-    @patch('agent.llm.requests.post')
+    @patch('mattbot.llm.requests.post')
     def test_generate_streaming(self, mock_post):
         """Test streaming generate request."""
         mock_response = Mock()
@@ -157,7 +157,7 @@ class TestOllamaClient:
         assert chunks[0]['response'] == "Once"
         assert chunks[2]['done'] is True
     
-    @patch('agent.llm.requests.post')
+    @patch('mattbot.llm.requests.post')
     def test_chat_raises_on_error(self, mock_post):
         """Test that HTTP errors are raised."""
         mock_response = Mock()
@@ -170,7 +170,7 @@ class TestOllamaClient:
         with pytest.raises(Exception, match="Server error"):
             client.chat(model="llama2", messages=messages)
     
-    @patch('agent.llm.requests.post')
+    @patch('mattbot.llm.requests.post')
     def test_chat_with_additional_kwargs(self, mock_post):
         """Test that additional kwargs are passed through."""
         mock_response = Mock()

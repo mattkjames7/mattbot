@@ -8,9 +8,9 @@ import sys
 import json
 from typing import List, Dict, Any
 
-from agent.llm import OllamaClient
-from agent.tools import TOOLS
-from agent.tool_executor import execute_tool
+from mattbot.llm import OllamaClient
+from mattbot.tools import TOOLS
+from mattbot.tool_executor import execute_tool
 
 
 class AgentCLI:
@@ -114,7 +114,7 @@ class AgentCLI:
     def run(self):
         """Run the interactive CLI loop."""
         print("╔════════════════════════════════════════════════════════════════════════════╗")
-        print("║                          Agent OSS - Interactive CLI                       ║")
+        print("║                            MattBot - Interactive CLI                       ║")
         print("╚════════════════════════════════════════════════════════════════════════════╝")
         print(f"\nWorking directory: {self.cwd}")
         print(f"Model: {self.model}")
@@ -156,7 +156,7 @@ def main():
     """Entry point for the CLI."""
     import argparse
     
-    parser = argparse.ArgumentParser(description="Agent OSS - Interactive AI Assistant")
+    parser = argparse.ArgumentParser(description="MattBot - Interactive AI Assistant")
     parser.add_argument(
         "--model",
         type=str,

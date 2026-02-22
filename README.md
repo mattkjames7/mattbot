@@ -1,8 +1,8 @@
-# Agent OSS
+# MattBot
 
 [![Tests](https://github.com/mattkjames7/mattbot/actions/workflows/test.yml/badge.svg)](https://github.com/mattkjames7/mattbot/actions/workflows/test.yml)
 
-An AI agent system with tool-calling capabilities, similar to Copilot/Cursor.
+MattBot - An AI agent system with tool-calling capabilities.
 
 ## Features
 
@@ -59,7 +59,7 @@ pip install -e ".[dev]"
 
 ## Configuration
 
-Set your Ollama server URL in `agent/llm.py` (default: `http://192.168.0.34:11434`)
+Set your Ollama server URL in `mattbot/llm.py` (default: `http://192.168.0.34:11434`)
 
 ## Testing
 
@@ -82,10 +82,10 @@ The easiest way to use the agent is through the interactive CLI:
 
 ```bash
 # Start the agent in the current directory
-agent
+mattbot
 
 # Use a different model
-agent --model llama2
+mattbot --model llama2
 ```
 
 The CLI provides an interactive chat interface where:
@@ -106,9 +106,9 @@ You: List all Python files in this directory
 ### Programmatic Usage
 
 ```python
-from agent.llm import OllamaClient
-from agent.tool_executor import execute_tool
-from agent.tools import TOOLS
+from mattbot.llm import OllamaClient
+from mattbot.tool_executor import execute_tool
+from mattbot.tools import TOOLS
 
 # Initialize LLM client
 client = OllamaClient()

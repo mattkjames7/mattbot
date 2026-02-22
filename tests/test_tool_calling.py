@@ -4,8 +4,8 @@ Integration tests for tool calling with the LLM.
 
 import os
 import pytest
-from agent.llm import OllamaClient
-from agent.tools import get_tools
+from mattbot.llm import OllamaClient
+from mattbot.tools import get_tools
 
 
 # Test cases: (prompt, expected_tool_name, description)
