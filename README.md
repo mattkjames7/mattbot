@@ -8,7 +8,7 @@ MattBot - An AI agent system with tool-calling capabilities.
 
 - **LLM Integration**: Ollama client for chat/generate with streaming support
 - **Tool Calling**: OpenAI-compatible function calling format
-- **Comprehensive Testing**: 134 unit tests with 100% pass rate
+- **Comprehensive Testing**: 106 unit tests with 100% pass rate
 - **CI/CD**: Automated testing on pull requests
 
 ## Available Tools
@@ -23,10 +23,6 @@ MattBot - An AI agent system with tool-calling capabilities.
 ✅ **semantic_search** - AI-powered semantic code search using embeddings  
 ✅ **web_search** - DuckDuckGo web search for real-time internet information
 
-## Setup
-
-```bash
-# Create virtual environment
 ## Installation
 
 ### From Source (Development)
@@ -116,7 +112,7 @@ client = OllamaClient()
 # Execute a tool directly
 result = execute_tool('semantic_search', 
                      query='HTTP client code', 
-                     path='agent', 
+                     path='mattbot', 
                      limit=3)
 
 # Use with LLM (tool calling)
@@ -129,9 +125,10 @@ response = client.chat(
 
 ## Architecture
 
-- `agent/cli.py` - Interactive CLI interface
-- `agent/llm.py` - OllamaClient for API communication
-- `agent/tool_executor.py` - Tool implementations
+- `mattbot/cli.py` - Interactive CLI interface
+- `mattbot/llm.py` - OllamaClient for API communication
+- `mattbot/tools.py` - Tool definitions in OpenAI format
+- `mattbot/tool_executor.py` - Tool implementations
 - `tests/` - Comprehensive test suite
 
 ## CI/CD
