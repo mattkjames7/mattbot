@@ -8,6 +8,9 @@ import sys
 import json
 from typing import List, Dict, Any
 
+from rich.console import Console
+from rich.markdown import Markdown
+
 from mattbot.llm import OllamaClient
 from mattbot.tools import TOOLS
 from mattbot.tool_executor import execute_tool
@@ -19,6 +22,7 @@ class AgentCLI:
         self.model = model
         self.messages: List[Dict[str, Any]] = []
         self.cwd = os.getcwd()
+        self.console = Console()
         
     def print_separator(self):
         """Print a visual separator."""
@@ -136,7 +140,9 @@ class AgentCLI:
                 
                 # Display response
                 if response:
-                    print(f"Assistant: {response}")
+                    self.console.print("\n[bold cyan]Assistant:[/bold cyan]")
+                    markdown = Markdown(response)
+                    self.console.print(markdown)
                     self.print_separator()
                 
             except EOFError:
