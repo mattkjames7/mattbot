@@ -1352,8 +1352,9 @@ class TestGrepSearch:
             os.unlink(temp_path)
 
 
+@pytest.mark.integration
 class TestSemanticSearch:
-    """Tests for semantic_search function."""
+    """Tests for semantic_search function (requires Ollama embeddings API)."""
     
     def test_basic_search(self):
         """Test basic semantic search in current directory."""
@@ -1556,8 +1557,9 @@ class TestSemanticSearch:
             os.unlink(temp_path)
 
 
+@pytest.mark.integration
 class TestWebSearch:
-    """Tests for web_search function."""
+    """Tests for web_search function (requires internet access)."""
     
     def test_basic_search(self):
         """Test basic web search."""

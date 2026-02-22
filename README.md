@@ -1,5 +1,7 @@
 # Agent OSS
 
+[![Tests](https://github.com/mattkjames7/mattbot/actions/workflows/test.yml/badge.svg)](https://github.com/mattkjames7/mattbot/actions/workflows/test.yml)
+
 An AI agent system with tool-calling capabilities, similar to Copilot/Cursor.
 
 ## Features
@@ -7,6 +9,7 @@ An AI agent system with tool-calling capabilities, similar to Copilot/Cursor.
 - **LLM Integration**: Ollama client for chat/generate with streaming support
 - **Tool Calling**: OpenAI-compatible function calling format
 - **Comprehensive Testing**: 134 unit tests with 100% pass rate
+- **CI/CD**: Automated testing on pull requests
 
 ## Available Tools
 
@@ -79,10 +82,26 @@ response = client.chat(
 - `agent/tool_executor.py` - Tool implementations
 - `tests/` - Comprehensive test suite
 
+## CI/CD
+
+The project uses GitHub Actions for continuous integration:
+
+- **Triggers**: Pull requests to main/master branch and manual workflow dispatch
+- **Test Exclusions**: Integration tests requiring external Ollama API are skipped in CI
+- **Python Version**: Tests run on Python 3.12
+- **Test Command**: `pytest tests/ -k "not integration"`
+
+To run the same tests locally:
+```bash
+pytest tests/ -k "not integration" -v
+```
+
 ## Dependencies
 
 - Python 3.12+
 - requests - HTTP client
-- sentence-transformers - Semantic search embeddings
 - ddgs - DuckDuckGo web search
 - pytest - Testing framework
+- numpy - For embeddings calculations (lightweight)
+
+**Note**: Semantic search uses Ollama's embeddings API with the `all-minilm:l6-v2` model, avoiding the need for heavy ML dependencies like PyTorch.

@@ -593,17 +593,8 @@ def semantic_search(query: str, path: Optional[str] = None,
             - error: error message if failed
     """
     try:
-        # Import sentence transformers
-        try:
-            from sentence_transformers import SentenceTransformer
-            import numpy as np
-        except ImportError:
-            return {
-                "success": False,
-                "results": [],
-                "query": query,
-                "error": "sentence-transformers not installed. Run: pip install sentence-transformers"
-            }
+        import requests
+        import numpy as np
         
         # Use default path if not provided
         if path is None:
@@ -618,8 +609,25 @@ def semantic_search(query: str, path: Optional[str] = None,
                 "error": f"Path does not exist: {path}"
             }
         
-        # Load a lightweight model (cached after first use)
-        model = SentenceTransformer('all-MiniLM-L6-v2')
+        # Ollama embeddings endpoint
+        ollama_url = "http://192.168.0.34:11434/api/embeddings"
+        embedding_model = "all-minilm:l6-v2"
+        
+        def get_embedding(text: str) -> list:
+            """Get embedding from Ollama API."""
+            try:
+                response = requests.post(
+                    ollama_url,
+                    json={
+                        "model": embedding_model,
+                        "prompt": text
+                    },
+                    timeout=30
+                )
+                response.raise_for_status()
+                return response.json()["embedding"]
+            except Exception as e:
+                raise Exception(f"Failed to get embedding: {str(e)}")
         
         # Collect text chunks from files
         chunks = []
@@ -680,12 +688,31 @@ def semantic_search(query: str, path: Optional[str] = None,
                 "message": "No text files found to search"
             }
         
-        # Encode query
-        query_embedding = model.encode(query, convert_to_tensor=False)
+        # Get query embedding
+        query_embedding = np.array(get_embedding(query))
         
-        # Encode all chunks
-        chunk_texts = [c['content'] for c in chunks]
-        chunk_embeddings = model.encode(chunk_texts, convert_to_tensor=False)
+        # Get embeddings for all chunks
+        chunk_embeddings = []
+        for chunk in chunks:
+            try:
+                embedding = get_embedding(chunk['content'])
+                chunk_embeddings.append(embedding)
+            except Exception:
+                # Skip chunks that fail to embed
+                continue
+        
+        if not chunk_embeddings:
+            return {
+                "success": True,
+                "results": [],
+                "query": query,
+                "total_results": 0,
+                "message": "Failed to generate embeddings for content"
+            }
+        
+        chunk_embeddings = np.array(chunk_embeddings)
+        # Filter chunks to match embeddings (in case some failed)
+        chunks = chunks[:len(chunk_embeddings)]
         
         # Calculate cosine similarities
         similarities = np.dot(chunk_embeddings, query_embedding) / (
