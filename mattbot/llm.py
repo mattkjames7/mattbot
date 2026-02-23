@@ -5,21 +5,65 @@ LLM client for making chat requests to Ollama server.
 import json
 import requests
 from typing import List, Dict, Any, Optional, Iterator
+import tiktoken
 
 
 class OllamaClient:
     """Client for interacting with Ollama API."""
     
-    def __init__(self, base_url: str = "http://192.168.0.34:11434"):
+    def __init__(self, base_url: str = "http://192.168.0.34:11434", model: str = "gpt-oss"):
         """
         Initialize Ollama client.
         
         Args:
             base_url: Base URL of the Ollama server
+            model: Model name to use for tokenization (default: gpt-oss)
         """
         self.base_url = base_url.rstrip('/')
         self.chat_url = f"{self.base_url}/api/chat"
         self.generate_url = f"{self.base_url}/api/generate"
+        self.model = model
+        # Try to get tokenizer for the model; fall back to cl100k_base for gpt-oss
+        try:
+            self.tokenizer = tiktoken.encoding_for_model(model)
+        except KeyError:
+            # For models like gpt-oss that might not be registered, use cl100k_base
+            self.tokenizer = tiktoken.get_encoding("cl100k_base")
+        self.last_context_length = 0
+        self.last_completion_tokens = 0
+    
+    def calculate_context_length(self, messages: List[Dict[str, str]]) -> int:
+        """
+        Calculate the token count for the given messages.
+        
+        Args:
+            messages: List of message dictionaries
+            
+        Returns:
+            Number of tokens in the messages
+        """
+        token_count = 0
+        for message in messages:
+            # Add tokens for the message role and content
+            token_count += 4  # Overhead for message metadata
+            token_count += len(self.tokenizer.encode(message.get("content", "")))
+        
+        # Add buffer for response overhead
+        token_count += 2
+        
+        return token_count
+    
+    def get_context_stats(self) -> Dict[str, int]:
+        """
+        Get statistics about the last API call.
+        
+        Returns:
+            Dictionary with context_length and completion_tokens
+        """
+        return {
+            "context_length": self.last_context_length,
+            "completion_tokens": self.last_completion_tokens
+        }
     
     def chat(
         self,
@@ -44,6 +88,9 @@ class OllamaClient:
         Returns:
             Response dictionary or iterator of response chunks if streaming
         """
+        # Calculate context length before sending
+        self.last_context_length = self.calculate_context_length(messages)
+        
         payload = {
             "model": model,
             "messages": messages,
@@ -67,7 +114,12 @@ class OllamaClient:
         if stream:
             return self._stream_response(response)
         else:
-            return response.json()
+            response_data = response.json()
+            # Extract completion tokens from response if available
+            if "message" in response_data:
+                completion_content = response_data["message"].get("content", "")
+                self.last_completion_tokens = len(self.tokenizer.encode(completion_content))
+            return response_data
     
     def _stream_response(self, response: requests.Response) -> Iterator[Dict[str, Any]]:
         """
