@@ -169,6 +169,8 @@ class AgentCLI:
             
             # Collect streamed response and display it
             full_response = {"message": {"content": "", "tool_calls": []}}
+            has_shown_header = False
+            has_shown_thinking_header = False
             
             # Stop animation temporarily to stream response
             self.animation_running = False
@@ -177,20 +179,38 @@ class AgentCLI:
             self.stop_status_display()
             
             # Stream and display the response
-            self.console.print("\n[bold cyan]Assistant:[/bold cyan]")
-            
             for chunk in response_stream:
-                if "message" in chunk and "content" in chunk["message"]:
-                    content = chunk["message"]["content"]
-                    full_response["message"]["content"] += content
-                    # Print streamed content without newline
-                    print(content, end="", flush=True)
+                if "message" in chunk:
+                    message = chunk["message"]
+                    
+                    # Display thinking tokens in real-time
+                    if "thinking" in message and message["thinking"]:
+                        if not has_shown_thinking_header:
+                            print("\n[dim][bold]💭 Thinking:[/bold]", flush=True)
+                            has_shown_thinking_header = True
+                        print(message["thinking"], end="", flush=True)
+                    
+                    # Collect content tokens (will render as markdown after streaming completes)
+                    if "content" in message and message["content"]:
+                        content = message["content"]
+                        
+                        if not has_shown_header:
+                            if has_shown_thinking_header:
+                                print("[/dim]\n", flush=True)
+                            has_shown_header = True
+                        
+                        full_response["message"]["content"] += content
                 
                 # Collect tool calls if present
                 if "message" in chunk and "tool_calls" in chunk["message"]:
                     full_response["message"]["tool_calls"] = chunk["message"].get("tool_calls", [])
             
             print()  # Final newline after streaming
+            
+            # Render the full response as Markdown for proper formatting
+            if full_response["message"]["content"]:
+                markdown = Markdown(full_response["message"]["content"])
+                self.console.print(markdown)
             
             # Calculate completion tokens after streaming
             self.client.last_completion_tokens = len(
@@ -230,6 +250,8 @@ class AgentCLI:
                 
                 # Collect streamed response
                 full_response = {"message": {"content": "", "tool_calls": []}}
+                has_shown_header = False
+                has_shown_thinking_header = False
                 
                 # Stop animation to stream response
                 self.animation_running = False
@@ -238,18 +260,37 @@ class AgentCLI:
                 self.stop_status_display()
                 
                 # Stream and display the response
-                self.console.print("\n[bold cyan]Assistant:[/bold cyan]")
-                
                 for chunk in response_stream:
-                    if "message" in chunk and "content" in chunk["message"]:
-                        content = chunk["message"]["content"]
-                        full_response["message"]["content"] += content
-                        print(content, end="", flush=True)
+                    if "message" in chunk:
+                        message = chunk["message"]
+                        
+                        # Display thinking tokens in real-time
+                        if "thinking" in message and message["thinking"]:
+                            if not has_shown_thinking_header:
+                                print("\n[dim][bold]💭 Thinking:[/bold]", flush=True)
+                                has_shown_thinking_header = True
+                            print(message["thinking"], end="", flush=True)
+                        
+                        # Collect content tokens (will render as markdown after streaming completes)
+                        if "content" in message and message["content"]:
+                            content = message["content"]
+                            
+                            if not has_shown_header:
+                                if has_shown_thinking_header:
+                                    print("[/dim]\n", flush=True)
+                                has_shown_header = True
+                            
+                            full_response["message"]["content"] += content
                     
                     if "message" in chunk and "tool_calls" in chunk["message"]:
                         full_response["message"]["tool_calls"] = chunk["message"].get("tool_calls", [])
                 
                 print()  # Final newline after streaming
+                
+                # Render the full response as Markdown for proper formatting
+                if full_response["message"]["content"]:
+                    markdown = Markdown(full_response["message"]["content"])
+                    self.console.print(markdown)
                 
                 # Calculate completion tokens
                 self.client.last_completion_tokens = len(
