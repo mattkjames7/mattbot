@@ -18,7 +18,7 @@ from mattbot.tool_executor import execute_tool
 
 class AgentCLI:
     def __init__(self, model: str = "gpt-oss:latest"):
-        self.client = OllamaClient()
+        self.client = OllamaClient(model=model.split(":")[0])  # Extract base model name
         self.model = model
         self.messages: List[Dict[str, Any]] = []
         self.cwd = os.getcwd()
@@ -85,6 +85,10 @@ class AgentCLI:
             messages=self.messages,
             tools=TOOLS
         )
+        
+        # Display context metrics
+        stats = self.client.get_context_stats()
+        self.console.print(f"[dim]📊 Context: {stats['context_length']} tokens | Completion: {stats['completion_tokens']} tokens[/dim]")
         
         # Add assistant response to history
         self.messages.append(response["message"])
