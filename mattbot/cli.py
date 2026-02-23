@@ -158,42 +158,109 @@ class AgentCLI:
                 "content": user_input
             })
             
-            # Initial LLM call
+            # Initial LLM call with streaming
             self.update_status("Sending request to LLM", "llm")
-            response = self.client.chat(
+            response_stream = self.client.chat(
                 model=self.model,
                 messages=self.messages,
-                tools=TOOLS
+                tools=TOOLS,
+                stream=True
             )
             
+            # Collect streamed response and display it
+            full_response = {"message": {"content": "", "tool_calls": []}}
+            
+            # Stop animation temporarily to stream response
+            self.animation_running = False
+            if self.animation_thread:
+                self.animation_thread.join(timeout=1)
+            self.stop_status_display()
+            
+            # Stream and display the response
+            self.console.print("\n[bold cyan]Assistant:[/bold cyan]")
+            
+            for chunk in response_stream:
+                if "message" in chunk and "content" in chunk["message"]:
+                    content = chunk["message"]["content"]
+                    full_response["message"]["content"] += content
+                    # Print streamed content without newline
+                    print(content, end="", flush=True)
+                
+                # Collect tool calls if present
+                if "message" in chunk and "tool_calls" in chunk["message"]:
+                    full_response["message"]["tool_calls"] = chunk["message"].get("tool_calls", [])
+            
+            print()  # Final newline after streaming
+            
+            # Calculate completion tokens after streaming
+            self.client.last_completion_tokens = len(
+                self.client.tokenizer.encode(full_response["message"]["content"])
+            )
+            
+            # Restart animation for tool handling
+            self.start_status_display()
+            
             # Add assistant response to history
-            self.messages.append(response["message"])
+            self.messages.append(full_response["message"])
             
             # Handle tool calls if present
             max_iterations = 10  # Prevent infinite loops
             iteration = 0
             
-            while response["message"].get("tool_calls") and iteration < max_iterations:
+            while full_response["message"].get("tool_calls") and iteration < max_iterations:
                 iteration += 1
                 
                 # Execute tools
-                tool_calls = response["message"]["tool_calls"]
+                tool_calls = full_response["message"]["tool_calls"]
                 self.update_status(f"Executing {len(tool_calls)} tool(s)", "tool")
                 tool_results = self.handle_tool_calls(tool_calls)
                 
                 # Add tool results to messages
                 self.messages.extend(tool_results)
                 
-                # Get next response from LLM
+                # Get next response from LLM with streaming
                 self.update_status("LLM processing tool results", "llm")
-                response = self.client.chat(
+                
+                response_stream = self.client.chat(
                     model=self.model,
                     messages=self.messages,
-                    tools=TOOLS
+                    tools=TOOLS,
+                    stream=True
                 )
                 
+                # Collect streamed response
+                full_response = {"message": {"content": "", "tool_calls": []}}
+                
+                # Stop animation to stream response
+                self.animation_running = False
+                if self.animation_thread:
+                    self.animation_thread.join(timeout=1)
+                self.stop_status_display()
+                
+                # Stream and display the response
+                self.console.print("\n[bold cyan]Assistant:[/bold cyan]")
+                
+                for chunk in response_stream:
+                    if "message" in chunk and "content" in chunk["message"]:
+                        content = chunk["message"]["content"]
+                        full_response["message"]["content"] += content
+                        print(content, end="", flush=True)
+                    
+                    if "message" in chunk and "tool_calls" in chunk["message"]:
+                        full_response["message"]["tool_calls"] = chunk["message"].get("tool_calls", [])
+                
+                print()  # Final newline after streaming
+                
+                # Calculate completion tokens
+                self.client.last_completion_tokens = len(
+                    self.client.tokenizer.encode(full_response["message"]["content"])
+                )
+                
+                # Restart animation
+                self.start_status_display()
+                
                 # Add assistant response to history
-                self.messages.append(response["message"])
+                self.messages.append(full_response["message"])
             
             # Display context metrics before closing status
             stats = self.client.get_context_stats()
@@ -202,7 +269,7 @@ class AgentCLI:
             time.sleep(0.5)  # Brief pause to show completion
             
             # Return final content
-            return response["message"].get("content", "")
+            return full_response["message"].get("content", "")
         
         finally:
             self.stop_status_display()
@@ -247,15 +314,9 @@ Press Ctrl+D to exit[/dim]
                 
                 self.print_separator()
                 
-                # Get response
-                response = self.chat(user_input)
-                
-                # Display response
-                if response:
-                    self.console.print("\n[bold cyan]Assistant:[/bold cyan]")
-                    markdown = Markdown(response)
-                    self.console.print(markdown)
-                    self.print_separator()
+                # Get response (response is already streamed and displayed in chat())
+                self.chat(user_input)
+                self.print_separator()
                 
             except EOFError:
                 # Ctrl+D pressed
