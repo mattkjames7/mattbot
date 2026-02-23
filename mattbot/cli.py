@@ -36,6 +36,7 @@ class AgentCLI:
         # Status tracking
         self.current_status = ""
         self.current_stage = "processing"
+        self.last_committed_status = None
         self.live_display = None
         self.animation_thread = None
         self.animation_running = False
@@ -59,33 +60,90 @@ class AgentCLI:
             return
         
         spinner = self.spinner_frames[self.spinner_index]
-        status_text = Text()
-        
-        if self.current_stage == "llm":
-            status_text.append(f"{spinner} ", style="cyan")
-            status_text.append("🧠 LLM Generating", style="cyan bold")
-        elif self.current_stage == "tool":
-            status_text.append(f"{spinner} ", style="yellow")
-            status_text.append("🔧 Executing Tool", style="yellow bold")
-        elif self.current_stage == "waiting":
-            status_text.append("⏳ ", style="blue")
-            status_text.append("Waiting for response", style="blue")
-        else:
-            status_text.append(f"{spinner} ", style="green")
-            status_text.append(self.current_status, style="green")
-        
-        status_text.append(f" | {self.current_status}", style="dim")
+        status_text = self._build_status_text(
+            status=self.current_status,
+            stage=self.current_stage,
+            spinner=spinner,
+            completed=False
+        )
         self.live_display.update(status_text)
+
+    def _build_status_text(
+        self,
+        status: str,
+        stage: str,
+        spinner: str | None,
+        completed: bool
+    ) -> Text:
+        """Build status text for live or completed display."""
+        status_text = Text()
+
+        if stage == "llm":
+            label = "🧠 LLM Generating"
+            label_style = "cyan bold"
+            spinner_style = "cyan"
+        elif stage == "tool":
+            label = "🔧 Executing Tool"
+            label_style = "yellow bold"
+            spinner_style = "yellow"
+        elif stage == "waiting":
+            label = "Waiting for response"
+            label_style = "blue"
+            spinner_style = "blue"
+        elif stage == "done":
+            label = status
+            label_style = "green"
+            spinner_style = "green"
+        else:
+            label = status
+            label_style = "green"
+            spinner_style = "green"
+
+        if completed:
+            status_text.append("✓ ", style="green")
+        elif spinner:
+            status_text.append(f"{spinner} ", style=spinner_style)
+
+        status_text.append(label, style=label_style)
+
+        if stage != "done" and status:
+            status_text.append(f" | {status}", style="dim")
+
+        return status_text
+
+    def _commit_status(self, status: str, stage: str):
+        """Print a completed status line to the console history."""
+        if not status:
+            return
+        if self.last_committed_status == (status, stage):
+            return
+
+        status_text = self._build_status_text(
+            status=status,
+            stage=stage,
+            spinner=None,
+            completed=True
+        )
+
+        if self.live_display:
+            self.live_display.console.print(status_text)
+        else:
+            self.console.print(status_text)
+
+        self.last_committed_status = (status, stage)
     
     def update_status(self, status: str, stage: str = "processing"):
         """Update the status message and stage."""
         with self.status_lock:
+            if self.current_status and (self.current_status, self.current_stage) != (status, stage):
+                self._commit_status(self.current_status, self.current_stage)
             self.current_status = status
             self.current_stage = stage
             self._render_status()
     
     def start_status_display(self):
         """Start the live status display with animation thread."""
+        self.last_committed_status = None
         self.live_display = Live(
             Text("⏳ Initializing...", style="dim"),
             console=self.console,
@@ -105,6 +163,8 @@ class AgentCLI:
             self.animation_thread.join(timeout=1)
         
         if self.live_display:
+            with self.status_lock:
+                self._commit_status(self.current_status, self.current_stage)
             self.live_display.__exit__(None, None, None)
             self.live_display = None
         
