@@ -8,6 +8,9 @@ import sys
 import json
 from typing import List, Dict, Any
 
+from rich.console import Console
+from rich.markdown import Markdown
+
 from mattbot.llm import OllamaClient
 from mattbot.tools import TOOLS
 from mattbot.tool_executor import execute_tool
@@ -19,6 +22,7 @@ class AgentCLI:
         self.model = model
         self.messages: List[Dict[str, Any]] = []
         self.cwd = os.getcwd()
+        self.console = Console()
         
     def print_separator(self):
         """Print a visual separator."""
@@ -113,12 +117,32 @@ class AgentCLI:
     
     def run(self):
         """Run the interactive CLI loop."""
-        print("╔════════════════════════════════════════════════════════════════════════════╗")
-        print("║                            MattBot - Interactive CLI                       ║")
-        print("╚════════════════════════════════════════════════════════════════════════════╝")
-        print(f"\nWorking directory: {self.cwd}")
-        print(f"Model: {self.model}")
-        print("\nType your message and press Enter. Press Ctrl+D (or Ctrl+Z on Windows) to exit.")
+        ascii_art = r"""
+[bold cyan]
+    ___  ___      _   _   ______       _   
+    |  \/  |     | | | | | ___ \     | |  
+    | .  . | __ _| |_| |_| |_/ / ___ | |_ 
+    | |\/| |/ _` | __| __| ___ \/ _ \| __|
+    | |  | | (_| | |_| |_| |_/ / (_) | |_ 
+    \_|  |_/\__,_|\__|\__\____/ \___/ \__|
+[/bold cyan]
+[yellow]
+              _ ._  _ , _ ._
+            (_ ' ( `  )_  .__)
+          ( (  (    )   `)  ) _)
+         (__ (_   (_ . _) _) ,__)
+             `~~`\ ' . /`~~`
+                  ;   ;
+                  /   \
+______________..-`_____`-..______________
+[/yellow]
+
+[dim]Interactive AI Assistant - Type your commands below
+Press Ctrl+D to exit[/dim]
+"""
+        self.console.print(ascii_art)
+        self.console.print(f"[bold]Working directory:[/bold] [green]{self.cwd}[/green]")
+        self.console.print(f"[bold]Model:[/bold] [green]{self.model}[/green]")
         self.print_separator()
         
         while True:
@@ -136,7 +160,9 @@ class AgentCLI:
                 
                 # Display response
                 if response:
-                    print(f"Assistant: {response}")
+                    self.console.print("\n[bold cyan]Assistant:[/bold cyan]")
+                    markdown = Markdown(response)
+                    self.console.print(markdown)
                     self.print_separator()
                 
             except EOFError:
