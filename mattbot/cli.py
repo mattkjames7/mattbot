@@ -6,10 +6,14 @@ Provides an interactive chat interface with tool-calling capabilities.
 import os
 import sys
 import json
+import time
 from typing import List, Dict, Any
+from itertools import cycle
 
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.live import Live
+from rich.text import Text
 
 from mattbot.llm import OllamaClient
 from mattbot.tools import TOOLS
@@ -24,9 +28,55 @@ class AgentCLI:
         self.cwd = os.getcwd()
         self.console = Console()
         
+        # Spinners for animation
+        self.spinners = {
+            "dots": cycle(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
+            "line": cycle(["-", "\\", "|", "/"]),
+            "arrow": cycle(["←", "↖", "↑", "↗", "→", "↘", "↓", "↙"]),
+        }
+        self.live_display = None
+        
     def print_separator(self):
         """Print a visual separator."""
         print("\n" + "─" * 80 + "\n")
+        
+    def update_status(self, status: str, stage: str = "processing"):
+        """Update the live status display."""
+        spinner = next(self.spinners["dots"])
+        status_text = Text()
+        
+        if stage == "llm":
+            status_text.append(f"{spinner} ", style="cyan")
+            status_text.append("🧠 LLM Generating", style="cyan bold")
+        elif stage == "tool":
+            status_text.append(f"{spinner} ", style="yellow")
+            status_text.append("🔧 Executing Tool", style="yellow bold")
+        elif stage == "waiting":
+            status_text.append("⏳ ", style="blue")
+            status_text.append("Waiting for response", style="blue")
+        else:
+            status_text.append(f"{spinner} ", style="green")
+            status_text.append(status, style="green")
+        
+        status_text.append(f" | {status}", style="dim")
+        
+        if self.live_display:
+            self.live_display.update(status_text)
+    
+    def start_status_display(self):
+        """Start the live status display."""
+        self.live_display = Live(
+            Text("⏳ Initializing...", style="dim"),
+            console=self.console,
+            refresh_per_second=10
+        )
+        self.live_display.__enter__()
+    
+    def stop_status_display(self):
+        """Stop the live status display."""
+        if self.live_display:
+            self.live_display.__exit__(None, None, None)
+            self.live_display = None
         
     def handle_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Execute tool calls and return results."""
@@ -34,6 +84,10 @@ class AgentCLI:
         
         for tool_call in tool_calls:
             tool_name = tool_call["function"]["name"]
+            
+            # Update status with tool name
+            self.update_status(f"Running: {tool_name}", "tool")
+            time.sleep(0.1)  # Small delay for visual effect
             
             # Parse arguments (handle both string and dict formats)
             arguments = tool_call["function"]["arguments"]
@@ -45,10 +99,6 @@ class AgentCLI:
             elif not isinstance(arguments, dict):
                 arguments = {}
             
-            print(f"🔧 Calling tool: {tool_name}")
-            if arguments:
-                print(f"   Arguments: {json.dumps(arguments, indent=2)}")
-            
             # Execute the tool
             try:
                 result = execute_tool(tool_name, **arguments)
@@ -57,56 +107,29 @@ class AgentCLI:
                     "tool_call_id": tool_call["id"],
                     "content": json.dumps(result)
                 })
-                print(f"✓ Tool completed successfully")
             except Exception as e:
                 error_msg = f"Error executing {tool_name}: {str(e)}"
-                print(f"✗ {error_msg}")
                 tool_results.append({
                     "role": "tool",
                     "tool_call_id": tool_call["id"],
                     "content": json.dumps({"error": error_msg})
                 })
-            
-            self.print_separator()
         
         return tool_results
     
     def chat(self, user_input: str) -> str:
         """Send a message and handle tool calls."""
-        # Add user message
-        self.messages.append({
-            "role": "user",
-            "content": user_input
-        })
+        self.start_status_display()
         
-        # Initial LLM call
-        response = self.client.chat(
-            model=self.model,
-            messages=self.messages,
-            tools=TOOLS
-        )
-        
-        # Display context metrics
-        stats = self.client.get_context_stats()
-        self.console.print(f"[dim]📊 Context: {stats['context_length']} tokens | Completion: {stats['completion_tokens']} tokens[/dim]")
-        
-        # Add assistant response to history
-        self.messages.append(response["message"])
-        
-        # Handle tool calls if present
-        max_iterations = 10  # Prevent infinite loops
-        iteration = 0
-        
-        while response["message"].get("tool_calls") and iteration < max_iterations:
-            iteration += 1
+        try:
+            # Add user message
+            self.messages.append({
+                "role": "user",
+                "content": user_input
+            })
             
-            # Execute tools
-            tool_results = self.handle_tool_calls(response["message"]["tool_calls"])
-            
-            # Add tool results to messages
-            self.messages.extend(tool_results)
-            
-            # Get next response from LLM
+            # Initial LLM call
+            self.update_status("Sending request to LLM", "llm")
             response = self.client.chat(
                 model=self.model,
                 messages=self.messages,
@@ -115,9 +138,44 @@ class AgentCLI:
             
             # Add assistant response to history
             self.messages.append(response["message"])
+            
+            # Handle tool calls if present
+            max_iterations = 10  # Prevent infinite loops
+            iteration = 0
+            
+            while response["message"].get("tool_calls") and iteration < max_iterations:
+                iteration += 1
+                
+                # Execute tools
+                tool_calls = response["message"]["tool_calls"]
+                self.update_status(f"Executing {len(tool_calls)} tool(s)", "tool")
+                tool_results = self.handle_tool_calls(tool_calls)
+                
+                # Add tool results to messages
+                self.messages.extend(tool_results)
+                
+                # Get next response from LLM
+                self.update_status("LLM processing tool results", "llm")
+                response = self.client.chat(
+                    model=self.model,
+                    messages=self.messages,
+                    tools=TOOLS
+                )
+                
+                # Add assistant response to history
+                self.messages.append(response["message"])
+            
+            # Display context metrics before closing status
+            stats = self.client.get_context_stats()
+            final_status = f"✓ Complete | 📊 {stats['context_length']} ctx tokens | {stats['completion_tokens']} out tokens"
+            self.update_status(final_status, "done")
+            time.sleep(0.5)  # Brief pause to show completion
+            
+            # Return final content
+            return response["message"].get("content", "")
         
-        # Return final content
-        return response["message"].get("content", "")
+        finally:
+            self.stop_status_display()
     
     def run(self):
         """Run the interactive CLI loop."""
