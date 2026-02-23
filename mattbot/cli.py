@@ -7,6 +7,7 @@ import os
 import sys
 import json
 import time
+import threading
 from typing import List, Dict, Any
 from itertools import cycle
 
@@ -28,52 +29,81 @@ class AgentCLI:
         self.cwd = os.getcwd()
         self.console = Console()
         
-        # Spinners for animation
-        self.spinners = {
-            "dots": cycle(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
-            "line": cycle(["-", "\\", "|", "/"]),
-            "arrow": cycle(["←", "↖", "↑", "↗", "→", "↘", "↓", "↙"]),
-        }
+        # Spinner frames for animation
+        self.spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        self.spinner_index = 0
+        
+        # Status tracking
+        self.current_status = ""
+        self.current_stage = "processing"
         self.live_display = None
+        self.animation_thread = None
+        self.animation_running = False
+        self.status_lock = threading.Lock()
         
     def print_separator(self):
         """Print a visual separator."""
         print("\n" + "─" * 80 + "\n")
         
-    def update_status(self, status: str, stage: str = "processing"):
-        """Update the live status display."""
-        spinner = next(self.spinners["dots"])
+    def _animate_spinner(self):
+        """Background thread that continuously animates the spinner."""
+        while self.animation_running:
+            with self.status_lock:
+                self.spinner_index = (self.spinner_index + 1) % len(self.spinner_frames)
+                self._render_status()
+            time.sleep(0.1)  # 10 Hz animation
+    
+    def _render_status(self):
+        """Render the current status text with the current spinner frame."""
+        if not self.live_display:
+            return
+        
+        spinner = self.spinner_frames[self.spinner_index]
         status_text = Text()
         
-        if stage == "llm":
+        if self.current_stage == "llm":
             status_text.append(f"{spinner} ", style="cyan")
             status_text.append("🧠 LLM Generating", style="cyan bold")
-        elif stage == "tool":
+        elif self.current_stage == "tool":
             status_text.append(f"{spinner} ", style="yellow")
             status_text.append("🔧 Executing Tool", style="yellow bold")
-        elif stage == "waiting":
+        elif self.current_stage == "waiting":
             status_text.append("⏳ ", style="blue")
             status_text.append("Waiting for response", style="blue")
         else:
             status_text.append(f"{spinner} ", style="green")
-            status_text.append(status, style="green")
+            status_text.append(self.current_status, style="green")
         
-        status_text.append(f" | {status}", style="dim")
-        
-        if self.live_display:
-            self.live_display.update(status_text)
+        status_text.append(f" | {self.current_status}", style="dim")
+        self.live_display.update(status_text)
+    
+    def update_status(self, status: str, stage: str = "processing"):
+        """Update the status message and stage."""
+        with self.status_lock:
+            self.current_status = status
+            self.current_stage = stage
+            self._render_status()
     
     def start_status_display(self):
-        """Start the live status display."""
+        """Start the live status display with animation thread."""
         self.live_display = Live(
             Text("⏳ Initializing...", style="dim"),
             console=self.console,
             refresh_per_second=10
         )
         self.live_display.__enter__()
+        
+        # Start animation thread
+        self.animation_running = True
+        self.animation_thread = threading.Thread(target=self._animate_spinner, daemon=True)
+        self.animation_thread.start()
     
     def stop_status_display(self):
-        """Stop the live status display."""
+        """Stop the live status display and animation thread."""
+        self.animation_running = False
+        if self.animation_thread:
+            self.animation_thread.join(timeout=1)
+        
         if self.live_display:
             self.live_display.__exit__(None, None, None)
             self.live_display = None
