@@ -14,6 +14,8 @@ from rich.markdown import Markdown
 from rich.live import Live
 from rich.text import Text
 
+from mattbot.rich_themes import DarkerOneDarkStyle
+
 from mattbot.llm import OllamaClient
 from mattbot.tools import TOOLS
 from mattbot.tool_executor import execute_tool
@@ -174,7 +176,7 @@ class AgentCLI:
         has_started_markdown_stream = False
 
         markdown_live = Live(
-            Markdown(""),
+            Markdown("", code_theme=DarkerOneDarkStyle),
             console=self.console,
             refresh_per_second=20,
             auto_refresh=False
@@ -203,7 +205,13 @@ class AgentCLI:
                         has_started_markdown_stream = True
 
                     full_response["message"]["content"] += message["content"]
-                    markdown_live.update(Markdown(full_response["message"]["content"]), refresh=True)
+                    markdown_live.update(
+                        Markdown(
+                            full_response["message"]["content"],
+                            code_theme=DarkerOneDarkStyle
+                        ),
+                        refresh=True
+                    )
 
             if "message" in chunk and "tool_calls" in chunk["message"]:
                 full_response["message"]["tool_calls"] = chunk["message"].get("tool_calls", [])
