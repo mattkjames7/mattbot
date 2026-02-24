@@ -88,8 +88,8 @@ class AgentCLI:
             spinner_style = "yellow"
         elif stage == "waiting":
             label = "Waiting for response"
-            label_style = "blue"
-            spinner_style = "blue"
+            label_style = "orange"
+            spinner_style = "orange"
         elif stage == "done":
             label = status
             label_style = "green"
@@ -363,15 +363,15 @@ class AgentCLI:
     def run(self):
         """Run the interactive CLI loop."""
         ascii_art = r"""
-[bold cyan]
-    ___  ___      _   _   ______       _
+[bold green]
+    ___  ___      _   _   _____       _
     |  \/  |     | | | | | ___ \     | |
     | .  . | __ _| |_| |_| |_/ / ___ | |_
     | |\/| |/ _` | __| __| ___ \/ _ \| __|
     | |  | | (_| | |_| |_| |_/ / (_) | |_
     \_|  |_/\__,_|\__|\__\____/ \___/ \__|
-[/bold cyan]
-[yellow]
+[/bold green]
+[bold yellow]
               _ ._  _ , _ ._
             (_ ' ( `  )_  .__)
           ( (  (    )   `)  ) _)
@@ -380,7 +380,7 @@ class AgentCLI:
                   ;   ;
                   /   \
 ______________..-`_____`-..______________
-[/yellow]
+[/bold yellow]
 
 [dim]Interactive AI Assistant - Type your commands below
 Press Ctrl+D to exit[/dim]
