@@ -576,7 +576,9 @@ def grep_search(pattern: str, path: str, file_pattern: Optional[str] = None,
 
 
 def semantic_search(query: str, path: Optional[str] = None, 
-                    limit: Optional[int] = None) -> Dict[str, Any]:
+                    limit: Optional[int] = None,
+                    embedding_model: str = "all-minilm:l6-v2",
+                    ollama_url: str = "http://localhost:11434") -> Dict[str, Any]:
     """
     Search for code using semantic similarity.
     
@@ -584,6 +586,8 @@ def semantic_search(query: str, path: Optional[str] = None,
         query: Natural language search query
         path: Optional path to limit search
         limit: Optional maximum number of results
+        embedding_model: Ollama embedding model to use (default: all-minilm:l6-v2)
+        ollama_url: Ollama server URL (default: http://localhost:11434)
         
     Returns:
         Dictionary containing:
@@ -610,14 +614,13 @@ def semantic_search(query: str, path: Optional[str] = None,
             }
         
         # Ollama embeddings endpoint
-        ollama_url = "http://192.168.0.34:11434/api/embeddings"
-        embedding_model = "all-minilm:l6-v2"
+        embeddings_url = f"{ollama_url.rstrip('/')}/api/embeddings"
         
         def get_embedding(text: str) -> list:
             """Get embedding from Ollama API."""
             try:
                 response = requests.post(
-                    ollama_url,
+                    embeddings_url,
                     json={
                         "model": embedding_model,
                         "prompt": text

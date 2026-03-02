@@ -15,9 +15,9 @@ class TestOllamaClient:
     def test_init_default_url(self):
         """Test client initialization with default URL."""
         client = OllamaClient()
-        assert client.base_url == "http://192.168.0.34:11434"
-        assert client.chat_url == "http://192.168.0.34:11434/api/chat"
-        assert client.generate_url == "http://192.168.0.34:11434/api/generate"
+        assert client.base_url == "http://localhost:11434"
+        assert client.chat_url == "http://localhost:11434/api/chat"
+        assert client.generate_url == "http://localhost:11434/api/generate"
     
     def test_init_custom_url(self):
         """Test client initialization with custom URL."""

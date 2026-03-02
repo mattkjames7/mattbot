@@ -14,6 +14,7 @@ from rich.markdown import Markdown
 from rich.live import Live
 from rich.text import Text
 
+from mattbot.config import ensure_config_file, resolve_config
 from mattbot.rich_themes import DarkerOneDarkStyle
 
 from mattbot.llm import OllamaClient
@@ -22,9 +23,23 @@ from mattbot.tool_executor import execute_tool
 
 
 class AgentCLI:
-    def __init__(self, model: str = "gpt-oss:latest"):
-        self.client = OllamaClient(model=model.split(":")[0])  # Extract base model name
+    def __init__(
+        self,
+        model: str = "gpt-oss:latest",
+        ollama_url: str = "http://localhost:11434",
+        max_context_tokens: int = 8192,
+        temperature: float = 0.7,
+        embedding_model: str = "all-minilm:l6-v2",
+    ):
+        self.client = OllamaClient(
+            base_url=ollama_url,
+            model=model.split(":")[0]
+        )  # Extract base model name
         self.model = model
+        self.ollama_url = ollama_url
+        self.max_context_tokens = max_context_tokens
+        self.temperature = temperature
+        self.embedding_model = embedding_model
         self.messages: List[Dict[str, Any]] = []
         self.cwd = os.getcwd()
         self.console = Console(color_system="truecolor")
@@ -247,6 +262,10 @@ class AgentCLI:
             
             # Execute the tool
             try:
+                # Add config values for tool calls
+                if tool_name == "semantic_search":
+                    arguments["embedding_model"] = self.embedding_model
+                    arguments["ollama_url"] = self.ollama_url
                 result = execute_tool(tool_name, **arguments)
                 tool_results.append({
                     "role": "tool",
@@ -281,7 +300,9 @@ class AgentCLI:
                 model=self.model,
                 messages=self.messages,
                 tools=TOOLS,
-                stream=True
+                stream=True,
+                temperature=self.temperature,
+                max_tokens=self.max_context_tokens,
             )
             
             # Stop animation temporarily to stream response
@@ -324,7 +345,9 @@ class AgentCLI:
                     model=self.model,
                     messages=self.messages,
                     tools=TOOLS,
-                    stream=True
+                    stream=True,
+                    temperature=self.temperature,
+                    max_tokens=self.max_context_tokens,
                 )
                 
                 # Stop animation to stream response
@@ -421,13 +444,55 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="gpt-oss:latest",
-        help="Ollama model to use (default: gpt-oss:latest)"
+        default=None,
+        help="Ollama model to use (overrides config file)"
+    )
+    parser.add_argument(
+        "--ollama-url",
+        type=str,
+        default=None,
+        help="Ollama server URL (overrides config file)"
+    )
+    parser.add_argument(
+        "--max-context-tokens",
+        type=int,
+        default=None,
+        help="Maximum context tokens (overrides config file)"
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=None,
+        help="Sampling temperature (overrides config file)"
+    )
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to config file (default: ~/.config/mattbot/config.toml)"
+    )
+    parser.add_argument(
+        "--init-config",
+        action="store_true",
+        help="Create a default config file (if missing) and exit"
     )
     
     args = parser.parse_args()
+
+    if args.init_config:
+        config_path = ensure_config_file(args.config)
+        print(f"Config ready at: {config_path}")
+        return
+
+    config = resolve_config(cli_args=args, config_path=args.config)
     
-    cli = AgentCLI(model=args.model)
+    cli = AgentCLI(
+        model=config.model,
+        ollama_url=config.ollama_url,
+        max_context_tokens=config.max_context_tokens,
+        temperature=config.temperature,
+        embedding_model=config.embedding_model,
+    )
     cli.run()
 
 
