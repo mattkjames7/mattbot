@@ -14,6 +14,8 @@ from rich.markdown import Markdown
 from rich.live import Live
 from rich.text import Text
 
+from mattbot.rich_themes import DarkerOneDarkStyle
+
 from mattbot.llm import OllamaClient
 from mattbot.tools import TOOLS
 from mattbot.tool_executor import execute_tool
@@ -25,7 +27,7 @@ class AgentCLI:
         self.model = model
         self.messages: List[Dict[str, Any]] = []
         self.cwd = os.getcwd()
-        self.console = Console()
+        self.console = Console(color_system="truecolor")
         
         # Spinner frames for animation
         self.spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -86,8 +88,8 @@ class AgentCLI:
             spinner_style = "yellow"
         elif stage == "waiting":
             label = "Waiting for response"
-            label_style = "blue"
-            spinner_style = "blue"
+            label_style = "orange"
+            spinner_style = "orange"
         elif stage == "done":
             label = status
             label_style = "green"
@@ -174,7 +176,7 @@ class AgentCLI:
         has_started_markdown_stream = False
 
         markdown_live = Live(
-            Markdown(""),
+            Markdown("", code_theme=DarkerOneDarkStyle),
             console=self.console,
             refresh_per_second=20,
             auto_refresh=False
@@ -203,7 +205,13 @@ class AgentCLI:
                         has_started_markdown_stream = True
 
                     full_response["message"]["content"] += message["content"]
-                    markdown_live.update(Markdown(full_response["message"]["content"]), refresh=True)
+                    markdown_live.update(
+                        Markdown(
+                            full_response["message"]["content"],
+                            code_theme=DarkerOneDarkStyle
+                        ),
+                        refresh=True
+                    )
 
             if "message" in chunk and "tool_calls" in chunk["message"]:
                 full_response["message"]["tool_calls"] = chunk["message"].get("tool_calls", [])
@@ -355,24 +363,20 @@ class AgentCLI:
     def run(self):
         """Run the interactive CLI loop."""
         ascii_art = r"""
-[bold cyan]
-    ___  ___      _   _   ______       _
-    |  \/  |     | | | | | ___ \     | |
-    | .  . | __ _| |_| |_| |_/ / ___ | |_
-    | |\/| |/ _` | __| __| ___ \/ _ \| __|
-    | |  | | (_| | |_| |_| |_/ / (_) | |_
-    \_|  |_/\__,_|\__|\__\____/ \___/ \__|
-[/bold cyan]
-[yellow]
-              _ ._  _ , _ ._
-            (_ ' ( `  )_  .__)
-          ( (  (    )   `)  ) _)
-         (__ (_   (_ . _) _) ,__)
-             `~~`\ ' . /`~~`
-                  ;   ;
-                  /   \
-______________..-`_____`-..______________
-[/yellow]
+[bold #7a1f2a]    ___  ___      _   _   _____       _[/bold #7a1f2a]
+[bold #9c2f3f]    |  \/  |     | | | | | ___ \     | |[/bold #9c2f3f]
+[bold #c44536]    | .  . | __ _| |_| |_| |_/ / ___ | |_[/bold #c44536]
+[bold #d96b2b]    | |\/| |/ _` | __| __| ___ \/ _ \| __|[/bold #d96b2b]
+[bold #e68a2e]    | |  | | (_| | |_| |_| |_/ / (_) | |_[/bold #e68a2e]
+[bold #f2a93b]    \_|  |_/\__,_|\__|\__\____/ \___/ \__|[/bold #f2a93b]
+[bold #ffd166]              _ ._  _ , _ ._[/bold #ffd166]
+[bold #ffd166]            (_ ' ( `  )_  .__)[/bold #ffd166]
+[bold #ffd166]          ( (  (    )   `)  ) _)[/bold #ffd166]
+[bold #ffd166]         (__ (_   (_ . _) _) ,__)[/bold #ffd166]
+[bold #ffd166]             `~~`\ ' . /`~~`[/bold #ffd166]
+[bold #ffd166]                  ;   ;[/bold #ffd166]
+[bold #ffd166]                  /   \ [/bold #ffd166]
+[bold #ffd166]______________..-`_____`-..______________[/bold #ffd166]
 
 [dim]Interactive AI Assistant - Type your commands below
 Press Ctrl+D to exit[/dim]
