@@ -27,7 +27,7 @@ class AgentCLI:
         self.model = model
         self.messages: List[Dict[str, Any]] = []
         self.cwd = os.getcwd()
-        self.console = Console()
+        self.console = Console(color_system="truecolor")
         
         # Spinner frames for animation
         self.spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -363,24 +363,20 @@ class AgentCLI:
     def run(self):
         """Run the interactive CLI loop."""
         ascii_art = r"""
-[bold green]
-    ___  ___      _   _   _____       _
-    |  \/  |     | | | | | ___ \     | |
-    | .  . | __ _| |_| |_| |_/ / ___ | |_
-    | |\/| |/ _` | __| __| ___ \/ _ \| __|
-    | |  | | (_| | |_| |_| |_/ / (_) | |_
-    \_|  |_/\__,_|\__|\__\____/ \___/ \__|
-[/bold green]
-[bold yellow]
-              _ ._  _ , _ ._
-            (_ ' ( `  )_  .__)
-          ( (  (    )   `)  ) _)
-         (__ (_   (_ . _) _) ,__)
-             `~~`\ ' . /`~~`
-                  ;   ;
-                  /   \
-______________..-`_____`-..______________
-[/bold yellow]
+[bold #7a1f2a]    ___  ___      _   _   _____       _[/bold #7a1f2a]
+[bold #9c2f3f]    |  \/  |     | | | | | ___ \     | |[/bold #9c2f3f]
+[bold #c44536]    | .  . | __ _| |_| |_| |_/ / ___ | |_[/bold #c44536]
+[bold #d96b2b]    | |\/| |/ _` | __| __| ___ \/ _ \| __|[/bold #d96b2b]
+[bold #e68a2e]    | |  | | (_| | |_| |_| |_/ / (_) | |_[/bold #e68a2e]
+[bold #f2a93b]    \_|  |_/\__,_|\__|\__\____/ \___/ \__|[/bold #f2a93b]
+[bold #ffd166]              _ ._  _ , _ ._[/bold #ffd166]
+[bold #ffd166]            (_ ' ( `  )_  .__)[/bold #ffd166]
+[bold #ffd166]          ( (  (    )   `)  ) _)[/bold #ffd166]
+[bold #ffd166]         (__ (_   (_ . _) _) ,__)[/bold #ffd166]
+[bold #ffd166]             `~~`\ ' . /`~~`[/bold #ffd166]
+[bold #ffd166]                  ;   ;[/bold #ffd166]
+[bold #ffd166]                  /   \ [/bold #ffd166]
+[bold #ffd166]______________..-`_____`-..______________[/bold #ffd166]
 
 [dim]Interactive AI Assistant - Type your commands below
 Press Ctrl+D to exit[/dim]
