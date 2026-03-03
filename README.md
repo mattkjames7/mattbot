@@ -68,12 +68,13 @@ ollama_url = "http://localhost:11434"
 max_context_tokens = 8192
 temperature = 0.7
 embedding_model = "all-minilm:l6-v2"
+history_length = 1000
 ```
 
 Override precedence is:
 
-1. CLI args (`--model`, `--ollama-url`, `--max-context-tokens`, `--temperature`)
-2. Environment variables (`MATTBOT_MODEL`, `MATTBOT_OLLAMA_URL`, `MATTBOT_MAX_CONTEXT_TOKENS`, `MATTBOT_TEMPERATURE`, `MATTBOT_EMBEDDING_MODEL`)
+1. CLI args (`--model`, `--ollama-url`, `--max-context-tokens`, `--temperature`, `--history-length`)
+2. Environment variables (`MATTBOT_MODEL`, `MATTBOT_OLLAMA_URL`, `MATTBOT_MAX_CONTEXT_TOKENS`, `MATTBOT_TEMPERATURE`, `MATTBOT_EMBEDDING_MODEL`, `MATTBOT_HISTORY_LENGTH`)
 3. Config file
 4. Built-in defaults
 

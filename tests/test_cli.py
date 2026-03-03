@@ -8,8 +8,9 @@ class TestAgentCLI:
     
     def test_initialization(self):
         """Test that AgentCLI initializes correctly."""
-        cli = AgentCLI(model="test-model")
+        cli = AgentCLI(model="test-model", history_length=123)
         assert cli.model == "test-model"
+        assert cli.history_length == 123
         assert cli.messages == []
         assert cli.cwd is not None
         

@@ -9,6 +9,11 @@ import time
 import threading
 from typing import List, Dict, Any
 
+try:
+    import readline
+except ImportError:  # pragma: no cover
+    readline = None
+
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.live import Live
@@ -30,6 +35,7 @@ class AgentCLI:
         max_context_tokens: int = 8192,
         temperature: float = 0.7,
         embedding_model: str = "all-minilm:l6-v2",
+        history_length: int = 1000,
     ):
         self.client = OllamaClient(
             base_url=ollama_url,
@@ -40,6 +46,7 @@ class AgentCLI:
         self.max_context_tokens = max_context_tokens
         self.temperature = temperature
         self.embedding_model = embedding_model
+        self.history_length = history_length
         self.messages: List[Dict[str, Any]] = []
         self.cwd = os.getcwd()
         self.console = Console(color_system="truecolor")
@@ -56,6 +63,29 @@ class AgentCLI:
         self.animation_thread = None
         self.animation_running = False
         self.status_lock = threading.Lock()
+        self.readline_enabled = False
+
+        self._setup_readline()
+
+    def _setup_readline(self):
+        """Enable terminal line editing and prompt history when available."""
+        if readline is None:
+            return
+
+        self.readline_enabled = True
+        readline.set_history_length(self.history_length)
+
+    def _read_user_input(self, prompt: str = "You: ") -> str:
+        """Read user input with optional in-session readline history."""
+        user_input = input(prompt)
+
+        if self.readline_enabled and user_input:
+            history_len = readline.get_current_history_length()
+            last_item = readline.get_history_item(history_len) if history_len > 0 else None
+            if last_item != user_input:
+                readline.add_history(user_input)
+
+        return user_input.strip()
         
     def print_separator(self):
         """Print a visual separator."""
@@ -412,7 +442,7 @@ Press Ctrl+D to exit[/dim]
         while True:
             try:
                 # Get user input
-                user_input = input("You: ").strip()
+                user_input = self._read_user_input("You: ")
                 
                 if not user_input:
                     continue
@@ -466,6 +496,12 @@ def main():
         help="Sampling temperature (overrides config file)"
     )
     parser.add_argument(
+        "--history-length",
+        type=int,
+        default=None,
+        help="Prompt history size for arrow-key recall (overrides config file)"
+    )
+    parser.add_argument(
         "--config",
         type=str,
         default=None,
@@ -492,6 +528,7 @@ def main():
         max_context_tokens=config.max_context_tokens,
         temperature=config.temperature,
         embedding_model=config.embedding_model,
+        history_length=config.history_length,
     )
     cli.run()
 
