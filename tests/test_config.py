@@ -17,6 +17,8 @@ def test_read_missing_config_returns_defaults(tmp_path):
     assert config.temperature == 0.7
     assert config.embedding_model == "all-minilm:l6-v2"
     assert config.history_length == 1000
+    assert config.logging_enabled is False
+    assert config.log_dir == "~/.mattbot/logs"
 
 
 def test_write_and_read_round_trip(tmp_path):
@@ -29,6 +31,8 @@ def test_write_and_read_round_trip(tmp_path):
         temperature=0.9,
         embedding_model="nomic-embed-text",
         history_length=250,
+        logging_enabled=True,
+        log_dir="~/custom-mattbot-logs",
     )
 
     write_config(expected, config_path)
@@ -48,6 +52,8 @@ def test_resolve_config_cli_overrides_file_and_env(tmp_path, monkeypatch):
             temperature=0.5,
             embedding_model="model-file",
             history_length=100,
+            logging_enabled=False,
+            log_dir="~/file-logs",
         ),
         config_path,
     )
@@ -58,6 +64,8 @@ def test_resolve_config_cli_overrides_file_and_env(tmp_path, monkeypatch):
     monkeypatch.setenv("MATTBOT_TEMPERATURE", "0.6")
     monkeypatch.setenv("MATTBOT_EMBEDDING_MODEL", "model-env")
     monkeypatch.setenv("MATTBOT_HISTORY_LENGTH", "400")
+    monkeypatch.setenv("MATTBOT_LOGGING", "true")
+    monkeypatch.setenv("MATTBOT_LOG_DIR", "~/env-logs")
 
     args = Namespace(
         model="from-cli",
@@ -66,6 +74,8 @@ def test_resolve_config_cli_overrides_file_and_env(tmp_path, monkeypatch):
         temperature=0.8,
         embedding_model="model-cli",
         history_length=300,
+        logging_enabled=False,
+        log_dir="~/cli-logs",
     )
     resolved = resolve_config(args, config_path=config_path, create_if_missing=False)
 
@@ -75,6 +85,8 @@ def test_resolve_config_cli_overrides_file_and_env(tmp_path, monkeypatch):
     assert resolved.temperature == 0.8
     assert resolved.embedding_model == "model-cli"
     assert resolved.history_length == 300
+    assert resolved.logging_enabled is False
+    assert resolved.log_dir == "~/cli-logs"
 
 
 def test_resolve_config_uses_env_when_cli_missing(tmp_path, monkeypatch):
@@ -88,6 +100,8 @@ def test_resolve_config_uses_env_when_cli_missing(tmp_path, monkeypatch):
             temperature=0.5,
             embedding_model="model-file",
             history_length=100,
+            logging_enabled=False,
+            log_dir="~/file-logs",
         ),
         config_path,
     )
@@ -95,6 +109,8 @@ def test_resolve_config_uses_env_when_cli_missing(tmp_path, monkeypatch):
     monkeypatch.setenv("MATTBOT_MODEL", "from-env")
     monkeypatch.setenv("MATTBOT_MAX_CONTEXT_TOKENS", "6000")
     monkeypatch.setenv("MATTBOT_HISTORY_LENGTH", "400")
+    monkeypatch.setenv("MATTBOT_LOGGING", "yes")
+    monkeypatch.setenv("MATTBOT_LOG_DIR", "~/env-logs")
 
     args = Namespace(
         model=None,
@@ -103,6 +119,8 @@ def test_resolve_config_uses_env_when_cli_missing(tmp_path, monkeypatch):
         temperature=None,
         embedding_model=None,
         history_length=None,
+        logging_enabled=None,
+        log_dir=None,
     )
     resolved = resolve_config(args, config_path=config_path, create_if_missing=False)
 
@@ -112,3 +130,5 @@ def test_resolve_config_uses_env_when_cli_missing(tmp_path, monkeypatch):
     assert resolved.temperature == 0.5
     assert resolved.embedding_model == "model-file"
     assert resolved.history_length == 400
+    assert resolved.logging_enabled is True
+    assert resolved.log_dir == "~/env-logs"

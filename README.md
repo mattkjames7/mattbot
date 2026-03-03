@@ -69,14 +69,29 @@ max_context_tokens = 8192
 temperature = 0.7
 embedding_model = "all-minilm:l6-v2"
 history_length = 1000
+logging_enabled = false
+log_dir = "~/.mattbot/logs"
 ```
 
 Override precedence is:
 
-1. CLI args (`--model`, `--ollama-url`, `--max-context-tokens`, `--temperature`, `--history-length`)
-2. Environment variables (`MATTBOT_MODEL`, `MATTBOT_OLLAMA_URL`, `MATTBOT_MAX_CONTEXT_TOKENS`, `MATTBOT_TEMPERATURE`, `MATTBOT_EMBEDDING_MODEL`, `MATTBOT_HISTORY_LENGTH`)
+1. CLI args (`--model`, `--ollama-url`, `--max-context-tokens`, `--temperature`, `--history-length`, `--log`/`--no-log`, `--log-dir`)
+2. Environment variables (`MATTBOT_MODEL`, `MATTBOT_OLLAMA_URL`, `MATTBOT_MAX_CONTEXT_TOKENS`, `MATTBOT_TEMPERATURE`, `MATTBOT_EMBEDDING_MODEL`, `MATTBOT_HISTORY_LENGTH`, `MATTBOT_LOGGING`, `MATTBOT_LOG_DIR`)
 3. Config file
 4. Built-in defaults
+
+### Session logging
+
+Logging is **off by default**.
+
+Enable it with any of:
+
+- CLI: `mattbot --log`
+- Config: set `logging_enabled = true`
+- Environment: `MATTBOT_LOGGING=true`
+
+Logs are written as one JSONL file per session (default directory: `~/.mattbot/logs`).
+Each session log includes timestamps, messages, tool calls/results, and a final list of files changed via `write_file`/`edit_file` tools.
 
 ## Testing
 

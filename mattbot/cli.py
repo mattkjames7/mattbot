@@ -21,6 +21,7 @@ from rich.text import Text
 
 from mattbot.config import ensure_config_file, resolve_config
 from mattbot.rich_themes import DarkerOneDarkStyle
+from mattbot.session_logger import SessionLogger
 
 from mattbot.llm import OllamaClient
 from mattbot.tools import TOOLS
@@ -36,6 +37,8 @@ class AgentCLI:
         temperature: float = 0.7,
         embedding_model: str = "all-minilm:l6-v2",
         history_length: int = 1000,
+        logging_enabled: bool = False,
+        log_dir: str = "~/.mattbot/logs",
     ):
         self.client = OllamaClient(
             base_url=ollama_url,
@@ -50,6 +53,17 @@ class AgentCLI:
         self.messages: List[Dict[str, Any]] = []
         self.cwd = os.getcwd()
         self.console = Console(color_system="truecolor")
+        self.session_logger = SessionLogger(
+            enabled=logging_enabled,
+            log_dir=log_dir,
+            session_metadata={
+                "model": model,
+                "ollama_url": ollama_url,
+                "cwd": self.cwd,
+                "max_context_tokens": max_context_tokens,
+                "temperature": temperature,
+            },
+        )
         
         # Spinner frames for animation
         self.spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -289,6 +303,12 @@ class AgentCLI:
                     arguments = {}
             elif not isinstance(arguments, dict):
                 arguments = {}
+
+            self.session_logger.log_tool_call(
+                tool_name=tool_name,
+                arguments=arguments,
+                tool_call_id=tool_call.get("id"),
+            )
             
             # Execute the tool
             try:
@@ -297,6 +317,7 @@ class AgentCLI:
                     arguments["embedding_model"] = self.embedding_model
                     arguments["ollama_url"] = self.ollama_url
                 result = execute_tool(tool_name, **arguments)
+                self.session_logger.log_tool_result(tool_name=tool_name, result=result, tool_call_id=tool_call.get("id"))
                 tool_results.append({
                     "role": "tool",
                     "tool_call_id": tool_call["id"],
@@ -304,6 +325,11 @@ class AgentCLI:
                 })
             except Exception as e:
                 error_msg = f"Error executing {tool_name}: {str(e)}"
+                self.session_logger.log_tool_result(
+                    tool_name=tool_name,
+                    result={"success": False, "error": error_msg},
+                    tool_call_id=tool_call.get("id"),
+                )
                 tool_results.append({
                     "role": "tool",
                     "tool_call_id": tool_call["id"],
@@ -323,6 +349,7 @@ class AgentCLI:
                 "role": "user",
                 "content": user_input
             })
+            self.session_logger.log_message("user", user_input)
             
             # Initial LLM call with streaming
             self.update_status("Sending request to LLM", "llm")
@@ -352,6 +379,11 @@ class AgentCLI:
             
             # Add assistant response to history
             self.messages.append(full_response["message"])
+            self.session_logger.log_message(
+                "assistant",
+                full_response["message"].get("content", ""),
+                tool_call_count=len(full_response["message"].get("tool_calls", [])),
+            )
             
             # Handle tool calls if present
             max_iterations = 10  # Prevent infinite loops
@@ -367,6 +399,12 @@ class AgentCLI:
                 
                 # Add tool results to messages
                 self.messages.extend(tool_results)
+                for tool_result in tool_results:
+                    self.session_logger.log_message(
+                        "tool",
+                        tool_result.get("content", ""),
+                        tool_call_id=tool_result.get("tool_call_id"),
+                    )
                 
                 # Get next response from LLM with streaming
                 self.update_status("LLM processing tool results", "llm")
@@ -397,6 +435,11 @@ class AgentCLI:
                 
                 # Add assistant response to history
                 self.messages.append(full_response["message"])
+                self.session_logger.log_message(
+                    "assistant",
+                    full_response["message"].get("content", ""),
+                    tool_call_count=len(full_response["message"].get("tool_calls", [])),
+                )
             
             # Display context metrics before closing status
             stats = self.client.get_context_stats()
@@ -412,6 +455,10 @@ class AgentCLI:
         
         finally:
             self.stop_status_display()
+
+    def close(self, reason: str = "session_end"):
+        """Finalize session resources."""
+        self.session_logger.finalize(reason=reason)
     
     def run(self):
         """Run the interactive CLI loop."""
@@ -437,6 +484,8 @@ Press Ctrl+D to exit[/dim]
         self.console.print(ascii_art)
         self.console.print(f"[bold]Working directory:[/bold] [green]{self.cwd}[/green]")
         self.console.print(f"[bold]Model:[/bold] [green]{self.model}[/green]")
+        if self.session_logger.enabled and self.session_logger.file_path:
+            self.console.print(f"[bold]Session log:[/bold] [green]{self.session_logger.file_path}[/green]")
         self.print_separator()
         
         while True:
@@ -456,12 +505,15 @@ Press Ctrl+D to exit[/dim]
             except EOFError:
                 # Ctrl+D pressed
                 print("\n\nGoodbye! 👋")
+                self.close(reason="eof")
                 break
             except KeyboardInterrupt:
                 # Ctrl+C pressed
                 print("\n\nInterrupted. Goodbye! 👋")
+                self.close(reason="keyboard_interrupt")
                 break
             except Exception as e:
+                self.session_logger.log_event("error", message=str(e))
                 print(f"\n❌ Error: {e}")
                 self.print_separator()
 
@@ -508,6 +560,26 @@ def main():
         help="Path to config file (default: ~/.config/mattbot/config.toml)"
     )
     parser.add_argument(
+        "--log",
+        dest="logging_enabled",
+        action="store_true",
+        default=None,
+        help="Enable session logging to file"
+    )
+    parser.add_argument(
+        "--no-log",
+        dest="logging_enabled",
+        action="store_false",
+        default=None,
+        help="Disable session logging to file"
+    )
+    parser.add_argument(
+        "--log-dir",
+        type=str,
+        default=None,
+        help="Directory for session logs (default: ~/.mattbot/logs)"
+    )
+    parser.add_argument(
         "--init-config",
         action="store_true",
         help="Create a default config file (if missing) and exit"
@@ -529,6 +601,8 @@ def main():
         temperature=config.temperature,
         embedding_model=config.embedding_model,
         history_length=config.history_length,
+        logging_enabled=config.logging_enabled,
+        log_dir=config.log_dir,
     )
     cli.run()
 
