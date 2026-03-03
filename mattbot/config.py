@@ -19,6 +19,7 @@ class AgentConfig:
     max_context_tokens: int = 8192
     temperature: float = 0.7
     embedding_model: str = "all-minilm:l6-v2"
+    history_length: int = 1000
 
 
 def get_config_path(config_path: str | os.PathLike[str] | None = None) -> Path:
@@ -43,7 +44,8 @@ def write_config(config: AgentConfig, config_path: str | os.PathLike[str] | None
     content = (
         "# MattBot configuration\n"
         "# Values can also be overridden with env vars: MATTBOT_MODEL, MATTBOT_OLLAMA_URL,\n"
-        "# MATTBOT_MAX_CONTEXT_TOKENS, MATTBOT_TEMPERATURE, MATTBOT_EMBEDDING_MODEL\n"
+        "# MATTBOT_MAX_CONTEXT_TOKENS, MATTBOT_TEMPERATURE, MATTBOT_EMBEDDING_MODEL,\n"
+        "# MATTBOT_HISTORY_LENGTH\n"
         "\n"
         "[agent]\n"
         f'model = "{_escape_toml_string(config.model)}"\n'
@@ -51,6 +53,7 @@ def write_config(config: AgentConfig, config_path: str | os.PathLike[str] | None
         f'max_context_tokens = {config.max_context_tokens}\n'
         f'temperature = {config.temperature}\n'
         f'embedding_model = "{_escape_toml_string(config.embedding_model)}"\n'
+        f'history_length = {config.history_length}\n'
     )
 
     path.write_text(content, encoding="utf-8")
@@ -85,6 +88,7 @@ def read_config(config_path: str | os.PathLike[str] | None = None) -> AgentConfi
     max_context_tokens = agent.get("max_context_tokens", defaults.max_context_tokens) if isinstance(agent, dict) else defaults.max_context_tokens
     temperature = agent.get("temperature", defaults.temperature) if isinstance(agent, dict) else defaults.temperature
     embedding_model = agent.get("embedding_model", defaults.embedding_model) if isinstance(agent, dict) else defaults.embedding_model
+    history_length = agent.get("history_length", defaults.history_length) if isinstance(agent, dict) else defaults.history_length
 
     return AgentConfig(
         model=str(model),
@@ -92,6 +96,7 @@ def read_config(config_path: str | os.PathLike[str] | None = None) -> AgentConfi
         max_context_tokens=int(max_context_tokens),
         temperature=float(temperature),
         embedding_model=str(embedding_model),
+        history_length=int(history_length),
     )
 
 
@@ -126,6 +131,10 @@ def resolve_config(
     if env_embedding_model:
         resolved.embedding_model = env_embedding_model
 
+    env_history_length = os.environ.get("MATTBOT_HISTORY_LENGTH")
+    if env_history_length:
+        resolved.history_length = int(env_history_length)
+
     if cli_args is not None:
         args_dict = vars(cli_args) if hasattr(cli_args, "__dict__") else dict(cli_args)
 
@@ -148,5 +157,9 @@ def resolve_config(
         cli_embedding_model = args_dict.get("embedding_model")
         if cli_embedding_model:
             resolved.embedding_model = str(cli_embedding_model)
+
+        cli_history_length = args_dict.get("history_length")
+        if cli_history_length:
+            resolved.history_length = int(cli_history_length)
 
     return resolved
