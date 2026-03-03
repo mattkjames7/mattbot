@@ -34,6 +34,11 @@ class CommandProcessor:
             history_length=self.cli.history_length,
             logging_enabled=self.cli.logging_enabled,
             log_dir=self.cli.log_dir,
+            artifact_store_enabled=self.cli.artifact_store_enabled,
+            artifact_dir=self.cli.artifact_dir,
+            artifact_ttl_days=self.cli.artifact_ttl_days,
+            artifact_max_sessions=self.cli.artifact_max_sessions,
+            artifact_inline_char_limit=self.cli.artifact_inline_char_limit,
         )
 
     def _show_settings(self):
@@ -47,6 +52,11 @@ class CommandProcessor:
         self.cli.console.print(f"  history_length = [green]{self.cli.history_length}[/green]")
         self.cli.console.print(f"  logging_enabled = [green]{self.cli.logging_enabled}[/green]")
         self.cli.console.print(f"  log_dir = [green]{self.cli.log_dir}[/green]")
+        self.cli.console.print(f"  artifact_store_enabled = [green]{self.cli.artifact_store_enabled}[/green]")
+        self.cli.console.print(f"  artifact_dir = [green]{self.cli.artifact_dir}[/green]")
+        self.cli.console.print(f"  artifact_ttl_days = [green]{self.cli.artifact_ttl_days}[/green]")
+        self.cli.console.print(f"  artifact_max_sessions = [green]{self.cli.artifact_max_sessions}[/green]")
+        self.cli.console.print(f"  artifact_inline_char_limit = [green]{self.cli.artifact_inline_char_limit}[/green]")
         if self.cli.config_path:
             self.cli.console.print(f"  config_path = [green]{self.cli.config_path}[/green]")
 
@@ -99,6 +109,32 @@ class CommandProcessor:
             self.cli.log_dir = raw_value
             self.cli.close(reason="settings_changed")
             self.cli.session_logger = self.cli._create_session_logger()
+        elif normalized_key == "artifact_store_enabled":
+            parsed_bool = bool_map.get(raw_value.strip().lower())
+            if parsed_bool is None:
+                raise ValueError("artifact_store_enabled must be a bool (true/false)")
+            self.cli.artifact_store_enabled = parsed_bool
+            self.cli.artifact_store = self.cli._create_artifact_store()
+        elif normalized_key == "artifact_dir":
+            self.cli.artifact_dir = raw_value
+            self.cli.artifact_store = self.cli._create_artifact_store()
+        elif normalized_key == "artifact_ttl_days":
+            parsed = int(raw_value)
+            if parsed < 0:
+                raise ValueError("artifact_ttl_days must be >= 0")
+            self.cli.artifact_ttl_days = parsed
+            self.cli.artifact_store = self.cli._create_artifact_store()
+        elif normalized_key == "artifact_max_sessions":
+            parsed = int(raw_value)
+            if parsed <= 0:
+                raise ValueError("artifact_max_sessions must be > 0")
+            self.cli.artifact_max_sessions = parsed
+            self.cli.artifact_store = self.cli._create_artifact_store()
+        elif normalized_key == "artifact_inline_char_limit":
+            parsed = int(raw_value)
+            if parsed <= 0:
+                raise ValueError("artifact_inline_char_limit must be > 0")
+            self.cli.artifact_inline_char_limit = parsed
         else:
             valid = [
                 "model",
@@ -109,6 +145,11 @@ class CommandProcessor:
                 "history_length",
                 "logging_enabled",
                 "log_dir",
+                "artifact_store_enabled",
+                "artifact_dir",
+                "artifact_ttl_days",
+                "artifact_max_sessions",
+                "artifact_inline_char_limit",
             ]
             raise ValueError(f"Unknown setting '{key}'. Valid keys: {', '.join(valid)}")
 

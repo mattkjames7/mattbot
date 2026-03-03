@@ -22,6 +22,11 @@ class AgentConfig:
     history_length: int = 1000
     logging_enabled: bool = False
     log_dir: str = "~/.mattbot/logs"
+    artifact_store_enabled: bool = True
+    artifact_dir: str = "~/.mattbot/artifacts"
+    artifact_ttl_days: int = 7
+    artifact_max_sessions: int = 20
+    artifact_inline_char_limit: int = 8000
 
 
 def _parse_bool(value: Any, default: bool = False) -> bool:
@@ -64,7 +69,9 @@ def write_config(config: AgentConfig, config_path: str | os.PathLike[str] | None
         "# MattBot configuration\n"
         "# Values can also be overridden with env vars: MATTBOT_MODEL, MATTBOT_OLLAMA_URL,\n"
         "# MATTBOT_MAX_CONTEXT_TOKENS, MATTBOT_TEMPERATURE, MATTBOT_EMBEDDING_MODEL,\n"
-        "# MATTBOT_HISTORY_LENGTH, MATTBOT_LOGGING, MATTBOT_LOG_DIR\n"
+        "# MATTBOT_HISTORY_LENGTH, MATTBOT_LOGGING, MATTBOT_LOG_DIR,\n"
+        "# MATTBOT_ARTIFACT_STORE_ENABLED, MATTBOT_ARTIFACT_DIR, MATTBOT_ARTIFACT_TTL_DAYS,\n"
+        "# MATTBOT_ARTIFACT_MAX_SESSIONS, MATTBOT_ARTIFACT_INLINE_CHAR_LIMIT\n"
         "\n"
         "[agent]\n"
         f'model = "{_escape_toml_string(config.model)}"\n'
@@ -75,6 +82,11 @@ def write_config(config: AgentConfig, config_path: str | os.PathLike[str] | None
         f'history_length = {config.history_length}\n'
         f'logging_enabled = {str(config.logging_enabled).lower()}\n'
         f'log_dir = "{_escape_toml_string(config.log_dir)}"\n'
+        f'artifact_store_enabled = {str(config.artifact_store_enabled).lower()}\n'
+        f'artifact_dir = "{_escape_toml_string(config.artifact_dir)}"\n'
+        f'artifact_ttl_days = {config.artifact_ttl_days}\n'
+        f'artifact_max_sessions = {config.artifact_max_sessions}\n'
+        f'artifact_inline_char_limit = {config.artifact_inline_char_limit}\n'
     )
 
     path.write_text(content, encoding="utf-8")
@@ -112,6 +124,11 @@ def read_config(config_path: str | os.PathLike[str] | None = None) -> AgentConfi
     history_length = agent.get("history_length", defaults.history_length) if isinstance(agent, dict) else defaults.history_length
     logging_enabled = agent.get("logging_enabled", defaults.logging_enabled) if isinstance(agent, dict) else defaults.logging_enabled
     log_dir = agent.get("log_dir", defaults.log_dir) if isinstance(agent, dict) else defaults.log_dir
+    artifact_store_enabled = agent.get("artifact_store_enabled", defaults.artifact_store_enabled) if isinstance(agent, dict) else defaults.artifact_store_enabled
+    artifact_dir = agent.get("artifact_dir", defaults.artifact_dir) if isinstance(agent, dict) else defaults.artifact_dir
+    artifact_ttl_days = agent.get("artifact_ttl_days", defaults.artifact_ttl_days) if isinstance(agent, dict) else defaults.artifact_ttl_days
+    artifact_max_sessions = agent.get("artifact_max_sessions", defaults.artifact_max_sessions) if isinstance(agent, dict) else defaults.artifact_max_sessions
+    artifact_inline_char_limit = agent.get("artifact_inline_char_limit", defaults.artifact_inline_char_limit) if isinstance(agent, dict) else defaults.artifact_inline_char_limit
 
     return AgentConfig(
         model=str(model),
@@ -122,6 +139,11 @@ def read_config(config_path: str | os.PathLike[str] | None = None) -> AgentConfi
         history_length=int(history_length),
         logging_enabled=_parse_bool(logging_enabled, default=defaults.logging_enabled),
         log_dir=str(log_dir),
+        artifact_store_enabled=_parse_bool(artifact_store_enabled, default=defaults.artifact_store_enabled),
+        artifact_dir=str(artifact_dir),
+        artifact_ttl_days=int(artifact_ttl_days),
+        artifact_max_sessions=int(artifact_max_sessions),
+        artifact_inline_char_limit=int(artifact_inline_char_limit),
     )
 
 
@@ -168,6 +190,29 @@ def resolve_config(
     if env_log_dir:
         resolved.log_dir = env_log_dir
 
+    env_artifact_store_enabled = os.environ.get("MATTBOT_ARTIFACT_STORE_ENABLED")
+    if env_artifact_store_enabled is not None:
+        resolved.artifact_store_enabled = _parse_bool(
+            env_artifact_store_enabled,
+            default=resolved.artifact_store_enabled,
+        )
+
+    env_artifact_dir = os.environ.get("MATTBOT_ARTIFACT_DIR")
+    if env_artifact_dir:
+        resolved.artifact_dir = env_artifact_dir
+
+    env_artifact_ttl_days = os.environ.get("MATTBOT_ARTIFACT_TTL_DAYS")
+    if env_artifact_ttl_days:
+        resolved.artifact_ttl_days = int(env_artifact_ttl_days)
+
+    env_artifact_max_sessions = os.environ.get("MATTBOT_ARTIFACT_MAX_SESSIONS")
+    if env_artifact_max_sessions:
+        resolved.artifact_max_sessions = int(env_artifact_max_sessions)
+
+    env_artifact_inline_char_limit = os.environ.get("MATTBOT_ARTIFACT_INLINE_CHAR_LIMIT")
+    if env_artifact_inline_char_limit:
+        resolved.artifact_inline_char_limit = int(env_artifact_inline_char_limit)
+
     if cli_args is not None:
         args_dict = vars(cli_args) if hasattr(cli_args, "__dict__") else dict(cli_args)
 
@@ -201,5 +246,27 @@ def resolve_config(
         cli_log_dir = args_dict.get("log_dir")
         if cli_log_dir:
             resolved.log_dir = str(cli_log_dir)
+
+        if "artifact_store_enabled" in args_dict and args_dict.get("artifact_store_enabled") is not None:
+            resolved.artifact_store_enabled = _parse_bool(
+                args_dict.get("artifact_store_enabled"),
+                default=resolved.artifact_store_enabled,
+            )
+
+        cli_artifact_dir = args_dict.get("artifact_dir")
+        if cli_artifact_dir:
+            resolved.artifact_dir = str(cli_artifact_dir)
+
+        cli_artifact_ttl_days = args_dict.get("artifact_ttl_days")
+        if cli_artifact_ttl_days:
+            resolved.artifact_ttl_days = int(cli_artifact_ttl_days)
+
+        cli_artifact_max_sessions = args_dict.get("artifact_max_sessions")
+        if cli_artifact_max_sessions:
+            resolved.artifact_max_sessions = int(cli_artifact_max_sessions)
+
+        cli_artifact_inline_char_limit = args_dict.get("artifact_inline_char_limit")
+        if cli_artifact_inline_char_limit:
+            resolved.artifact_inline_char_limit = int(cli_artifact_inline_char_limit)
 
     return resolved

@@ -10,7 +10,7 @@ class TestAgentCLI:
     
     def test_initialization(self):
         """Test that AgentCLI initializes correctly."""
-        cli = AgentCLI(model="test-model", history_length=123)
+        cli = AgentCLI(model="test-model", history_length=123, artifact_store_enabled=False)
         assert cli.model == "test-model"
         assert cli.history_length == 123
         assert cli.messages == []
@@ -18,33 +18,33 @@ class TestAgentCLI:
         
     def test_print_separator(self, capsys):
         """Test that print_separator outputs correctly."""
-        cli = AgentCLI()
+        cli = AgentCLI(artifact_store_enabled=False)
         cli.print_separator()
         captured = capsys.readouterr()
         assert "─" in captured.out
         
     def test_cwd_is_set(self):
         """Test that current working directory is captured."""
-        cli = AgentCLI()
+        cli = AgentCLI(artifact_store_enabled=False)
         assert isinstance(cli.cwd, str)
         assert len(cli.cwd) > 0
 
     def test_exit_command_returns_exit(self):
         """Test that /exit triggers CLI exit action."""
-        cli = AgentCLI()
+        cli = AgentCLI(artifact_store_enabled=False)
         result = cli._handle_command("/exit")
         assert result == "exit"
 
     def test_set_command_updates_temperature(self):
         """Test that /set updates runtime settings."""
-        cli = AgentCLI(temperature=0.7)
+        cli = AgentCLI(temperature=0.7, artifact_store_enabled=False)
         result = cli._handle_command("/set temperature 0.25")
         assert result == "continue"
         assert cli.temperature == 0.25
 
     def test_shell_command_executes_without_llm(self):
         """Test that /shell invokes local shell execution."""
-        cli = AgentCLI()
+        cli = AgentCLI(artifact_store_enabled=False)
 
         with patch("mattbot.commands.execute_tool") as mock_execute_tool:
             mock_execute_tool.return_value = {
@@ -64,7 +64,7 @@ class TestAgentCLI:
 
     def test_new_session_clears_messages(self):
         """Test that /new clears chat history and starts a new session."""
-        cli = AgentCLI(logging_enabled=True)
+        cli = AgentCLI(logging_enabled=True, artifact_store_enabled=False)
         cli.messages = [{"role": "user", "content": "hi"}]
         old_logger = cli.session_logger
 
@@ -73,3 +73,24 @@ class TestAgentCLI:
         assert result == "continue"
         assert cli.messages == []
         assert cli.session_logger is not old_logger
+
+    def test_large_tool_result_is_compacted_to_artifact_reference(self, tmp_path):
+        """Large tool outputs should be summarized with artifact handle for context efficiency."""
+        cli = AgentCLI(
+            artifact_store_enabled=True,
+            artifact_dir=str(tmp_path / "artifacts"),
+            artifact_inline_char_limit=200,
+        )
+
+        result = {
+            "success": True,
+            "stdout": "x" * 1000,
+            "stderr": "",
+            "exit_code": 0,
+        }
+
+        formatted = cli._format_tool_result_for_model(tool_name="run_bash_command", result=result)
+
+        assert "artifact_id" in formatted
+        assert "truncated" in formatted
+        assert "raw_size_chars" in formatted
