@@ -55,7 +55,27 @@ pip install -e ".[dev]"
 
 ## Configuration
 
-Set your Ollama server URL in `mattbot/llm.py` (default: `http://192.168.0.34:11434`)
+MattBot creates a config file on first run (or with `--init-config`):
+
+- `~/.config/mattbot/config.toml`
+
+Example:
+
+```toml
+[agent]
+model = "gpt-oss:latest"
+ollama_url = "http://localhost:11434"
+max_context_tokens = 8192
+temperature = 0.7
+embedding_model = "all-minilm:l6-v2"
+```
+
+Override precedence is:
+
+1. CLI args (`--model`, `--ollama-url`, `--max-context-tokens`, `--temperature`)
+2. Environment variables (`MATTBOT_MODEL`, `MATTBOT_OLLAMA_URL`, `MATTBOT_MAX_CONTEXT_TOKENS`, `MATTBOT_TEMPERATURE`, `MATTBOT_EMBEDDING_MODEL`)
+3. Config file
+4. Built-in defaults
 
 ## Testing
 

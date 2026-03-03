@@ -11,7 +11,7 @@ import tiktoken
 class OllamaClient:
     """Client for interacting with Ollama API."""
     
-    def __init__(self, base_url: str = "http://192.168.0.34:11434", model: str = "gpt-oss"):
+    def __init__(self, base_url: str = "http://localhost:11434", model: str = "gpt-oss"):
         """
         Initialize Ollama client.
         

@@ -87,7 +87,7 @@ The mattbot will now work within that directory context.
 ## Troubleshooting
 
 If the mattbot doesn't respond:
-1. Check your Ollama server is running: `curl http://192.168.0.34:11434/api/tags`
+1. Check your Ollama server is running: `curl http://localhost:11434/api/tags`
 2. Verify the model exists: `ollama list`
 3. Check the server URL in `mattbot/llm.py`
 
