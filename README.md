@@ -123,8 +123,19 @@ mattbot --model llama2
 The CLI provides an interactive chat interface where:
 - The agent can call tools automatically based on your requests
 - All file operations work from your current working directory
+- Local slash commands let you control the CLI without calling the LLM
 - Press **Ctrl+D** to exit gracefully
 - Tool executions are displayed in real-time
+
+Local slash commands:
+
+- `/help` - show command help
+- `/settings` - show current runtime settings
+- `/settings set <key> <value>` (or `/set <key> <value>`) - update runtime settings
+- `/settings save [config_path]` - save current settings to config file
+- `/shell <command>` (or `/bash <command>`) - run shell commands locally
+- `/new` - start a new session (clears messages and starts a new log file)
+- `/exit` (or `/quit`) - exit the CLI
 
 Example session:
 ```

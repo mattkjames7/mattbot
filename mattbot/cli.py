@@ -20,6 +20,7 @@ from rich.live import Live
 from rich.text import Text
 
 from mattbot.config import ensure_config_file, resolve_config
+from mattbot.commands import CommandProcessor
 from mattbot.rich_themes import DarkerOneDarkStyle
 from mattbot.session_logger import SessionLogger
 
@@ -39,31 +40,26 @@ class AgentCLI:
         history_length: int = 1000,
         logging_enabled: bool = False,
         log_dir: str = "~/.mattbot/logs",
+        config_path: str | None = None,
     ):
-        self.client = OllamaClient(
-            base_url=ollama_url,
-            model=model.split(":")[0]
-        )  # Extract base model name
         self.model = model
         self.ollama_url = ollama_url
         self.max_context_tokens = max_context_tokens
         self.temperature = temperature
         self.embedding_model = embedding_model
         self.history_length = history_length
+        self.logging_enabled = logging_enabled
+        self.log_dir = log_dir
+        self.config_path = config_path
+
+        self.client = OllamaClient(
+            base_url=self.ollama_url,
+            model=self.model.split(":")[0]
+        )  # Extract base model name
         self.messages: List[Dict[str, Any]] = []
         self.cwd = os.getcwd()
         self.console = Console(color_system="truecolor")
-        self.session_logger = SessionLogger(
-            enabled=logging_enabled,
-            log_dir=log_dir,
-            session_metadata={
-                "model": model,
-                "ollama_url": ollama_url,
-                "cwd": self.cwd,
-                "max_context_tokens": max_context_tokens,
-                "temperature": temperature,
-            },
-        )
+        self.session_logger = self._create_session_logger()
         
         # Spinner frames for animation
         self.spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -78,8 +74,50 @@ class AgentCLI:
         self.animation_running = False
         self.status_lock = threading.Lock()
         self.readline_enabled = False
+        self.command_processor = CommandProcessor(self)
 
         self._setup_readline()
+
+    def _session_metadata(self) -> Dict[str, Any]:
+        """Build metadata recorded at session start."""
+        return {
+            "model": self.model,
+            "ollama_url": self.ollama_url,
+            "cwd": self.cwd,
+            "max_context_tokens": self.max_context_tokens,
+            "temperature": self.temperature,
+        }
+
+    def _create_session_logger(self) -> SessionLogger:
+        """Create a fresh session logger instance from current settings."""
+        return SessionLogger(
+            enabled=self.logging_enabled,
+            log_dir=self.log_dir,
+            session_metadata=self._session_metadata(),
+        )
+
+    def _rebuild_client(self):
+        """Rebuild LLM client after model/url changes."""
+        self.client = OllamaClient(
+            base_url=self.ollama_url,
+            model=self.model.split(":")[0],
+        )
+
+    def _start_new_session(self):
+        """Reset conversational state and start a new session log."""
+        self.close(reason="new_session")
+        self.messages = []
+        self.client.last_context_length = 0
+        self.client.last_completion_tokens = 0
+        self.session_logger = self._create_session_logger()
+
+        self.console.print("[green]Started a new session.[/green]")
+        if self.session_logger.enabled and self.session_logger.file_path:
+            self.console.print(f"[bold]Session log:[/bold] [green]{self.session_logger.file_path}[/green]")
+
+    def _handle_command(self, raw_input: str) -> str:
+        """Delegate slash commands to command processor."""
+        return self.command_processor.handle(raw_input)
 
     def _setup_readline(self):
         """Enable terminal line editing and prompt history when available."""
@@ -479,6 +517,7 @@ class AgentCLI:
 [bold #ffd166]______________..-`_____`-..______________[/bold #ffd166]
 
 [dim]Interactive AI Assistant - Type your commands below
+Use /help for local commands (no LLM call)
 Press Ctrl+D to exit[/dim]
 """
         self.console.print(ascii_art)
@@ -494,6 +533,14 @@ Press Ctrl+D to exit[/dim]
                 user_input = self._read_user_input("You: ")
                 
                 if not user_input:
+                    continue
+
+                if user_input.startswith("/"):
+                    self.print_separator()
+                    command_result = self._handle_command(user_input)
+                    self.print_separator()
+                    if command_result == "exit":
+                        break
                     continue
                 
                 self.print_separator()
@@ -603,6 +650,7 @@ def main():
         history_length=config.history_length,
         logging_enabled=config.logging_enabled,
         log_dir=config.log_dir,
+        config_path=args.config,
     )
     cli.run()
 
