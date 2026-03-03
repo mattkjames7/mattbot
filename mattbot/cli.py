@@ -20,6 +20,7 @@ from rich.live import Live
 from rich.text import Text
 
 from mattbot.config import ensure_config_file, resolve_config
+from mattbot.artifact_store import ArtifactStore
 from mattbot.commands import CommandProcessor
 from mattbot.rich_themes import DarkerOneDarkStyle
 from mattbot.session_logger import SessionLogger
@@ -40,6 +41,11 @@ class AgentCLI:
         history_length: int = 1000,
         logging_enabled: bool = False,
         log_dir: str = "~/.mattbot/logs",
+        artifact_store_enabled: bool = True,
+        artifact_dir: str = "~/.mattbot/artifacts",
+        artifact_ttl_days: int = 7,
+        artifact_max_sessions: int = 20,
+        artifact_inline_char_limit: int = 8000,
         config_path: str | None = None,
     ):
         self.model = model
@@ -50,6 +56,11 @@ class AgentCLI:
         self.history_length = history_length
         self.logging_enabled = logging_enabled
         self.log_dir = log_dir
+        self.artifact_store_enabled = artifact_store_enabled
+        self.artifact_dir = artifact_dir
+        self.artifact_ttl_days = artifact_ttl_days
+        self.artifact_max_sessions = artifact_max_sessions
+        self.artifact_inline_char_limit = artifact_inline_char_limit
         self.config_path = config_path
 
         self.client = OllamaClient(
@@ -60,6 +71,7 @@ class AgentCLI:
         self.cwd = os.getcwd()
         self.console = Console(color_system="truecolor")
         self.session_logger = self._create_session_logger()
+        self.artifact_store = self._create_artifact_store()
         
         # Spinner frames for animation
         self.spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -86,6 +98,11 @@ class AgentCLI:
             "cwd": self.cwd,
             "max_context_tokens": self.max_context_tokens,
             "temperature": self.temperature,
+            "artifact_store_enabled": self.artifact_store_enabled,
+            "artifact_dir": self.artifact_dir,
+            "artifact_ttl_days": self.artifact_ttl_days,
+            "artifact_max_sessions": self.artifact_max_sessions,
+            "artifact_inline_char_limit": self.artifact_inline_char_limit,
         }
 
     def _create_session_logger(self) -> SessionLogger:
@@ -94,6 +111,15 @@ class AgentCLI:
             enabled=self.logging_enabled,
             log_dir=self.log_dir,
             session_metadata=self._session_metadata(),
+        )
+
+    def _create_artifact_store(self) -> ArtifactStore:
+        """Create artifact store from current settings."""
+        return ArtifactStore(
+            enabled=self.artifact_store_enabled,
+            artifact_dir=self.artifact_dir,
+            ttl_days=self.artifact_ttl_days,
+            max_sessions=self.artifact_max_sessions,
         )
 
     def _rebuild_client(self):
@@ -110,10 +136,90 @@ class AgentCLI:
         self.client.last_context_length = 0
         self.client.last_completion_tokens = 0
         self.session_logger = self._create_session_logger()
+        if self.artifact_store_enabled:
+            self.artifact_store.start_new_session()
 
         self.console.print("[green]Started a new session.[/green]")
         if self.session_logger.enabled and self.session_logger.file_path:
             self.console.print(f"[bold]Session log:[/bold] [green]{self.session_logger.file_path}[/green]")
+
+    def _extract_tool_key_facts(self, result: dict[str, Any]) -> dict[str, Any]:
+        """Extract compact, high-signal fields from a tool result."""
+        keys_of_interest = [
+            "success",
+            "error",
+            "exit_code",
+            "command",
+            "file_path",
+            "lines_read",
+            "total_lines",
+            "bytes_written",
+            "lines_written",
+            "path",
+            "matches",
+            "num_results",
+            "working_directory",
+        ]
+        facts: dict[str, Any] = {}
+        for key in keys_of_interest:
+            if key in result:
+                facts[key] = result[key]
+        return facts
+
+    def _build_tool_summary(self, tool_name: str, result: dict[str, Any], max_chars: int = 500) -> str:
+        """Build a compact textual summary for model context."""
+        success = result.get("success")
+        prefix = f"{tool_name}: "
+        if success is True:
+            prefix += "success"
+        elif success is False:
+            prefix += "failed"
+        else:
+            prefix += "completed"
+
+        parts: list[str] = []
+        if "error" in result and result.get("error"):
+            parts.append(f"error={result.get('error')}")
+        if "exit_code" in result:
+            parts.append(f"exit_code={result.get('exit_code')}")
+        if "file_path" in result:
+            parts.append(f"file={result.get('file_path')}")
+        if "lines_read" in result:
+            parts.append(f"lines_read={result.get('lines_read')}")
+        if "bytes_written" in result:
+            parts.append(f"bytes_written={result.get('bytes_written')}")
+        if "matches" in result and isinstance(result.get("matches"), list):
+            parts.append(f"matches={len(result.get('matches', []))}")
+        if "stdout" in result and isinstance(result.get("stdout"), str) and result.get("stdout"):
+            stdout_preview = result["stdout"].strip().replace("\n", " ")
+            parts.append(f"stdout_preview={stdout_preview[:120]}")
+
+        summary = prefix
+        if parts:
+            summary += " | " + " | ".join(parts)
+
+        if len(summary) > max_chars:
+            return summary[: max_chars - 3] + "..."
+        return summary
+
+    def _format_tool_result_for_model(self, tool_name: str, result: dict[str, Any]) -> str:
+        """Format tool result for model context with artifact-backed truncation."""
+        serialized = json.dumps(result, ensure_ascii=False)
+        if len(serialized) <= self.artifact_inline_char_limit:
+            return serialized
+
+        artifact = self.artifact_store.put(tool_name=tool_name, result=result)
+        compact_payload = {
+            "ok": bool(result.get("success", True)),
+            "summary": self._build_tool_summary(tool_name, result),
+            "key_facts": self._extract_tool_key_facts(result),
+            "artifact_id": artifact.get("artifact_id"),
+            "artifact_session_id": artifact.get("session_id"),
+            "truncated": True,
+            "raw_size_chars": len(serialized),
+            "inline_char_limit": self.artifact_inline_char_limit,
+        }
+        return json.dumps(compact_payload, ensure_ascii=False)
 
     def _handle_command(self, raw_input: str) -> str:
         """Delegate slash commands to command processor."""
@@ -359,7 +465,7 @@ class AgentCLI:
                 tool_results.append({
                     "role": "tool",
                     "tool_call_id": tool_call["id"],
-                    "content": json.dumps(result)
+                    "content": self._format_tool_result_for_model(tool_name=tool_name, result=result)
                 })
             except Exception as e:
                 error_msg = f"Error executing {tool_name}: {str(e)}"
@@ -627,6 +733,44 @@ def main():
         help="Directory for session logs (default: ~/.mattbot/logs)"
     )
     parser.add_argument(
+        "--artifact-store",
+        dest="artifact_store_enabled",
+        action="store_true",
+        default=None,
+        help="Enable persistent artifact store for large tool outputs"
+    )
+    parser.add_argument(
+        "--no-artifact-store",
+        dest="artifact_store_enabled",
+        action="store_false",
+        default=None,
+        help="Disable persistent artifact store"
+    )
+    parser.add_argument(
+        "--artifact-dir",
+        type=str,
+        default=None,
+        help="Directory for stored tool output artifacts (default: ~/.mattbot/artifacts)"
+    )
+    parser.add_argument(
+        "--artifact-ttl-days",
+        type=int,
+        default=None,
+        help="Delete artifact sessions older than this many days (default: 7)"
+    )
+    parser.add_argument(
+        "--artifact-max-sessions",
+        type=int,
+        default=None,
+        help="Maximum number of artifact sessions to keep (default: 20)"
+    )
+    parser.add_argument(
+        "--artifact-inline-char-limit",
+        type=int,
+        default=None,
+        help="Max chars of raw tool result allowed in model context before artifacting (default: 8000)"
+    )
+    parser.add_argument(
         "--init-config",
         action="store_true",
         help="Create a default config file (if missing) and exit"
@@ -650,6 +794,11 @@ def main():
         history_length=config.history_length,
         logging_enabled=config.logging_enabled,
         log_dir=config.log_dir,
+        artifact_store_enabled=config.artifact_store_enabled,
+        artifact_dir=config.artifact_dir,
+        artifact_ttl_days=config.artifact_ttl_days,
+        artifact_max_sessions=config.artifact_max_sessions,
+        artifact_inline_char_limit=config.artifact_inline_char_limit,
         config_path=args.config,
     )
     cli.run()
