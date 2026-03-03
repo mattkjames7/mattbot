@@ -27,7 +27,7 @@ class SessionLogger:
 
         if self.enabled:
             self.log_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
             self.file_path = self.log_dir / f"session-{timestamp}-{os.getpid()}.jsonl"
             self.log_event("session_start", metadata=self.session_metadata)
 

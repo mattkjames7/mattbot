@@ -6,6 +6,7 @@ Provides an interactive chat interface with tool-calling capabilities.
 import os
 import json
 import time
+import shlex
 import threading
 from typing import List, Dict, Any
 
@@ -19,7 +20,7 @@ from rich.markdown import Markdown
 from rich.live import Live
 from rich.text import Text
 
-from mattbot.config import ensure_config_file, resolve_config
+from mattbot.config import AgentConfig, ensure_config_file, resolve_config, write_config
 from mattbot.rich_themes import DarkerOneDarkStyle
 from mattbot.session_logger import SessionLogger
 
@@ -39,31 +40,26 @@ class AgentCLI:
         history_length: int = 1000,
         logging_enabled: bool = False,
         log_dir: str = "~/.mattbot/logs",
+        config_path: str | None = None,
     ):
-        self.client = OllamaClient(
-            base_url=ollama_url,
-            model=model.split(":")[0]
-        )  # Extract base model name
         self.model = model
         self.ollama_url = ollama_url
         self.max_context_tokens = max_context_tokens
         self.temperature = temperature
         self.embedding_model = embedding_model
         self.history_length = history_length
+        self.logging_enabled = logging_enabled
+        self.log_dir = log_dir
+        self.config_path = config_path
+
+        self.client = OllamaClient(
+            base_url=self.ollama_url,
+            model=self.model.split(":")[0]
+        )  # Extract base model name
         self.messages: List[Dict[str, Any]] = []
         self.cwd = os.getcwd()
         self.console = Console(color_system="truecolor")
-        self.session_logger = SessionLogger(
-            enabled=logging_enabled,
-            log_dir=log_dir,
-            session_metadata={
-                "model": model,
-                "ollama_url": ollama_url,
-                "cwd": self.cwd,
-                "max_context_tokens": max_context_tokens,
-                "temperature": temperature,
-            },
-        )
+        self.session_logger = self._create_session_logger()
         
         # Spinner frames for animation
         self.spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -80,6 +76,242 @@ class AgentCLI:
         self.readline_enabled = False
 
         self._setup_readline()
+
+    def _session_metadata(self) -> Dict[str, Any]:
+        """Build metadata recorded at session start."""
+        return {
+            "model": self.model,
+            "ollama_url": self.ollama_url,
+            "cwd": self.cwd,
+            "max_context_tokens": self.max_context_tokens,
+            "temperature": self.temperature,
+        }
+
+    def _create_session_logger(self) -> SessionLogger:
+        """Create a fresh session logger instance from current settings."""
+        return SessionLogger(
+            enabled=self.logging_enabled,
+            log_dir=self.log_dir,
+            session_metadata=self._session_metadata(),
+        )
+
+    def _rebuild_client(self):
+        """Rebuild LLM client after model/url changes."""
+        self.client = OllamaClient(
+            base_url=self.ollama_url,
+            model=self.model.split(":")[0],
+        )
+
+    def _start_new_session(self):
+        """Reset conversational state and start a new session log."""
+        self.close(reason="new_session")
+        self.messages = []
+        self.client.last_context_length = 0
+        self.client.last_completion_tokens = 0
+        self.session_logger = self._create_session_logger()
+
+        self.console.print("[green]Started a new session.[/green]")
+        if self.session_logger.enabled and self.session_logger.file_path:
+            self.console.print(f"[bold]Session log:[/bold] [green]{self.session_logger.file_path}[/green]")
+
+    def _build_agent_config(self) -> AgentConfig:
+        """Create config object from current runtime settings."""
+        return AgentConfig(
+            model=self.model,
+            ollama_url=self.ollama_url,
+            max_context_tokens=self.max_context_tokens,
+            temperature=self.temperature,
+            embedding_model=self.embedding_model,
+            history_length=self.history_length,
+            logging_enabled=self.logging_enabled,
+            log_dir=self.log_dir,
+        )
+
+    def _show_settings(self):
+        """Print current runtime settings."""
+        self.console.print("[bold]Current settings[/bold]")
+        self.console.print(f"  model = [green]{self.model}[/green]")
+        self.console.print(f"  ollama_url = [green]{self.ollama_url}[/green]")
+        self.console.print(f"  max_context_tokens = [green]{self.max_context_tokens}[/green]")
+        self.console.print(f"  temperature = [green]{self.temperature}[/green]")
+        self.console.print(f"  embedding_model = [green]{self.embedding_model}[/green]")
+        self.console.print(f"  history_length = [green]{self.history_length}[/green]")
+        self.console.print(f"  logging_enabled = [green]{self.logging_enabled}[/green]")
+        self.console.print(f"  log_dir = [green]{self.log_dir}[/green]")
+        if self.config_path:
+            self.console.print(f"  config_path = [green]{self.config_path}[/green]")
+
+    def _update_setting(self, key: str, raw_value: str):
+        """Update one runtime setting from command input."""
+        normalized_key = key.strip().lower()
+        bool_map = {
+            "1": True,
+            "true": True,
+            "yes": True,
+            "y": True,
+            "on": True,
+            "0": False,
+            "false": False,
+            "no": False,
+            "n": False,
+            "off": False,
+        }
+
+        if normalized_key == "model":
+            self.model = raw_value
+            self._rebuild_client()
+        elif normalized_key == "ollama_url":
+            self.ollama_url = raw_value
+            self._rebuild_client()
+        elif normalized_key == "max_context_tokens":
+            parsed = int(raw_value)
+            if parsed <= 0:
+                raise ValueError("max_context_tokens must be > 0")
+            self.max_context_tokens = parsed
+        elif normalized_key == "temperature":
+            self.temperature = float(raw_value)
+        elif normalized_key == "embedding_model":
+            self.embedding_model = raw_value
+        elif normalized_key == "history_length":
+            parsed = int(raw_value)
+            if parsed <= 0:
+                raise ValueError("history_length must be > 0")
+            self.history_length = parsed
+            if self.readline_enabled and readline is not None:
+                readline.set_history_length(self.history_length)
+        elif normalized_key == "logging_enabled":
+            parsed_bool = bool_map.get(raw_value.strip().lower())
+            if parsed_bool is None:
+                raise ValueError("logging_enabled must be a bool (true/false)")
+            self.logging_enabled = parsed_bool
+            self.close(reason="settings_changed")
+            self.session_logger = self._create_session_logger()
+        elif normalized_key == "log_dir":
+            self.log_dir = raw_value
+            self.close(reason="settings_changed")
+            self.session_logger = self._create_session_logger()
+        else:
+            valid = [
+                "model",
+                "ollama_url",
+                "max_context_tokens",
+                "temperature",
+                "embedding_model",
+                "history_length",
+                "logging_enabled",
+                "log_dir",
+            ]
+            raise ValueError(f"Unknown setting '{key}'. Valid keys: {', '.join(valid)}")
+
+    def _show_command_help(self):
+        """Display available local slash commands."""
+        self.console.print("[bold]Slash commands[/bold]")
+        self.console.print("  /help")
+        self.console.print("  /settings [show]")
+        self.console.print("  /settings set <key> <value>")
+        self.console.print("  /settings save [config_path]")
+        self.console.print("  /set <key> <value>  (alias)")
+        self.console.print("  /shell <command>    (alias: /bash)")
+        self.console.print("  /new                (start a new session)")
+        self.console.print("  /exit               (alias: /quit)")
+
+    def _handle_command(self, raw_input: str) -> str:
+        """Handle local slash commands. Returns 'continue' or 'exit'."""
+        try:
+            tokens = shlex.split(raw_input[1:])
+        except ValueError as exc:
+            self.console.print(f"[red]Invalid command syntax:[/red] {exc}")
+            return "continue"
+
+        if not tokens:
+            self.console.print("[yellow]Empty command.[/yellow] Try /help")
+            return "continue"
+
+        command = tokens[0].lower()
+        args = tokens[1:]
+
+        if command in {"exit", "quit"}:
+            self.close(reason="command_exit")
+            self.console.print("[green]Goodbye! 👋[/green]")
+            return "exit"
+
+        if command in {"help", "?"}:
+            self._show_command_help()
+            return "continue"
+
+        if command in {"new", "reset"}:
+            self._start_new_session()
+            return "continue"
+
+        if command in {"shell", "bash"}:
+            if not args:
+                self.console.print("[yellow]Usage:[/yellow] /shell <command>")
+                return "continue"
+
+            shell_command = " ".join(args)
+            self.session_logger.log_tool_call(
+                tool_name="run_bash_command",
+                arguments={"command": shell_command, "working_directory": self.cwd},
+                tool_call_id="local-shell-command",
+            )
+            result = execute_tool("run_bash_command", command=shell_command, working_directory=self.cwd)
+            self.session_logger.log_tool_result(
+                tool_name="run_bash_command",
+                result=result,
+                tool_call_id="local-shell-command",
+            )
+
+            if result.get("stdout"):
+                self.console.print(result["stdout"], end="")
+            if result.get("stderr"):
+                self.console.print(result["stderr"], style="red", end="")
+
+            exit_code = result.get("exit_code", -1)
+            if exit_code == 0:
+                self.console.print("[green]Command completed successfully.[/green]")
+            else:
+                self.console.print(f"[yellow]Command exited with code {exit_code}.[/yellow]")
+
+            return "continue"
+
+        if command in {"settings", "set"}:
+            if command == "set":
+                args = ["set", *args]
+
+            subcommand = args[0].lower() if args else "show"
+
+            if subcommand in {"show", "list"}:
+                self._show_settings()
+                return "continue"
+
+            if subcommand == "set":
+                if len(args) < 3:
+                    self.console.print("[yellow]Usage:[/yellow] /settings set <key> <value>")
+                    return "continue"
+
+                key = args[1]
+                value = " ".join(args[2:])
+                try:
+                    self._update_setting(key, value)
+                except ValueError as exc:
+                    self.console.print(f"[red]Invalid setting:[/red] {exc}")
+                    return "continue"
+
+                self.console.print(f"[green]Updated {key} to {value}[/green]")
+                return "continue"
+
+            if subcommand == "save":
+                target_path = args[1] if len(args) > 1 else self.config_path
+                written_path = write_config(self._build_agent_config(), config_path=target_path)
+                self.config_path = str(written_path)
+                self.console.print(f"[green]Saved settings to {written_path}[/green]")
+                return "continue"
+
+            self.console.print("[yellow]Usage:[/yellow] /settings [show|set|save]")
+            return "continue"
+
+        self.console.print(f"[yellow]Unknown command:[/yellow] /{command}. Try /help")
+        return "continue"
 
     def _setup_readline(self):
         """Enable terminal line editing and prompt history when available."""
@@ -479,6 +711,7 @@ class AgentCLI:
 [bold #ffd166]______________..-`_____`-..______________[/bold #ffd166]
 
 [dim]Interactive AI Assistant - Type your commands below
+Use /help for local commands (no LLM call)
 Press Ctrl+D to exit[/dim]
 """
         self.console.print(ascii_art)
@@ -494,6 +727,14 @@ Press Ctrl+D to exit[/dim]
                 user_input = self._read_user_input("You: ")
                 
                 if not user_input:
+                    continue
+
+                if user_input.startswith("/"):
+                    self.print_separator()
+                    command_result = self._handle_command(user_input)
+                    self.print_separator()
+                    if command_result == "exit":
+                        break
                     continue
                 
                 self.print_separator()
@@ -603,6 +844,7 @@ def main():
         history_length=config.history_length,
         logging_enabled=config.logging_enabled,
         log_dir=config.log_dir,
+        config_path=args.config,
     )
     cli.run()
 
