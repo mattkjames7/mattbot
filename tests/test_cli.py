@@ -46,7 +46,7 @@ class TestAgentCLI:
         """Test that /shell invokes local shell execution."""
         cli = AgentCLI()
 
-        with patch("mattbot.cli.execute_tool") as mock_execute_tool:
+        with patch("mattbot.commands.execute_tool") as mock_execute_tool:
             mock_execute_tool.return_value = {
                 "success": True,
                 "stdout": "ok\n",
