@@ -93,7 +93,13 @@ class AgentCLI:
 
     def _messages_for_llm(self) -> List[Dict[str, Any]]:
         """Build the message list sent to the model, including system prompt."""
-        return [{"role": "system", "content": SYSTEM_PROMPT}, *self.messages]
+        tool_names = [tool["function"]["name"] for tool in TOOLS if "function" in tool and "name" in tool["function"]]
+        tool_instructions = (
+            "\n\nAVAILABLE TOOL NAMES (use exact names only):\n"
+            + "\n".join(f"- {name}" for name in tool_names)
+            + "\nNever call a wrapper tool name like 'functions'. Call the target tool directly."
+        )
+        return [{"role": "system", "content": f"{SYSTEM_PROMPT}{tool_instructions}"}, *self.messages]
 
     def _session_metadata(self) -> Dict[str, Any]:
         """Build metadata recorded at session start."""
@@ -452,6 +458,14 @@ class AgentCLI:
                     arguments = {}
             elif not isinstance(arguments, dict):
                 arguments = {}
+
+            # Compatibility shim for models that wrap calls as: {name: "<tool>", arguments: {...}}
+            if tool_name == "functions" and isinstance(arguments, dict):
+                wrapped_name = arguments.get("name")
+                wrapped_arguments = arguments.get("arguments", {})
+                if isinstance(wrapped_name, str) and wrapped_name in [t["function"]["name"] for t in TOOLS]:
+                    tool_name = wrapped_name
+                    arguments = wrapped_arguments if isinstance(wrapped_arguments, dict) else {}
 
             self.session_logger.log_tool_call(
                 tool_name=tool_name,

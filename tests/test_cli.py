@@ -103,5 +103,36 @@ class TestAgentCLI:
 
         llm_messages = cli._messages_for_llm()
 
-        assert llm_messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
+        assert llm_messages[0]["role"] == "system"
+        assert SYSTEM_PROMPT in llm_messages[0]["content"]
+        assert "AVAILABLE TOOL NAMES" in llm_messages[0]["content"]
         assert llm_messages[1:] == cli.messages
+
+    def test_handle_tool_calls_supports_wrapped_functions_tool(self):
+        """Some models wrap real tool calls inside a 'functions' tool payload."""
+        cli = AgentCLI(artifact_store_enabled=False)
+        tool_calls = [{
+            "id": "call_1",
+            "function": {
+                "name": "functions",
+                "arguments": {
+                    "name": "read_file",
+                    "arguments": {"file_path": "README.md", "start_line": 1, "end_line": 1},
+                },
+            },
+        }]
+
+        with patch("mattbot.cli.execute_tool") as mock_execute_tool:
+            mock_execute_tool.return_value = {
+                "success": True,
+                "content": "# MattBot\n",
+                "file_path": "README.md",
+                "lines_read": 1,
+            }
+            results = cli.handle_tool_calls(tool_calls)
+
+        mock_execute_tool.assert_called_once_with(
+            "read_file", file_path="README.md", start_line=1, end_line=1
+        )
+        assert len(results) == 1
+        assert results[0]["role"] == "tool"
