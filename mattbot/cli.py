@@ -24,6 +24,7 @@ from mattbot.artifact_store import ArtifactStore
 from mattbot.commands import CommandProcessor
 from mattbot.rich_themes import DarkerOneDarkStyle
 from mattbot.session_logger import SessionLogger
+from mattbot.system_prompt import SYSTEM_PROMPT
 
 from mattbot.llm import OllamaClient
 from mattbot.tools import TOOLS
@@ -89,6 +90,10 @@ class AgentCLI:
         self.command_processor = CommandProcessor(self)
 
         self._setup_readline()
+
+    def _messages_for_llm(self) -> List[Dict[str, Any]]:
+        """Build the message list sent to the model, including system prompt."""
+        return [{"role": "system", "content": SYSTEM_PROMPT}, *self.messages]
 
     def _session_metadata(self) -> Dict[str, Any]:
         """Build metadata recorded at session start."""
@@ -499,7 +504,7 @@ class AgentCLI:
             self.update_status("Sending request to LLM", "llm")
             response_stream = self.client.chat(
                 model=self.model,
-                messages=self.messages,
+                messages=self._messages_for_llm(),
                 tools=TOOLS,
                 stream=True,
                 temperature=self.temperature,
@@ -555,7 +560,7 @@ class AgentCLI:
                 
                 response_stream = self.client.chat(
                     model=self.model,
-                    messages=self.messages,
+                    messages=self._messages_for_llm(),
                     tools=TOOLS,
                     stream=True,
                     temperature=self.temperature,

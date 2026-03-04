@@ -3,6 +3,7 @@ import pytest
 from unittest.mock import patch
 
 from mattbot.cli import AgentCLI
+from mattbot.system_prompt import SYSTEM_PROMPT
 
 
 class TestAgentCLI:
@@ -94,3 +95,13 @@ class TestAgentCLI:
         assert "artifact_id" in formatted
         assert "truncated" in formatted
         assert "raw_size_chars" in formatted
+
+    def test_messages_for_llm_includes_system_prompt(self):
+        """Outbound model context should include a dedicated system prompt."""
+        cli = AgentCLI(artifact_store_enabled=False)
+        cli.messages = [{"role": "user", "content": "hello"}]
+
+        llm_messages = cli._messages_for_llm()
+
+        assert llm_messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
+        assert llm_messages[1:] == cli.messages
