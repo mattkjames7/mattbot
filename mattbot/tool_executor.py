@@ -330,7 +330,7 @@ def edit_file(file_path: str, old_content: str, new_content: str) -> Dict[str, A
         }
 
 
-def list_directory(path: str, recursive: bool = False) -> Dict[str, Any]:
+def list_directory(path: str = ".", recursive: bool = False) -> Dict[str, Any]:
     """
     List files and directories in a path.
     

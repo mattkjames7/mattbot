@@ -105,8 +105,15 @@ class TestAgentCLI:
 
         assert llm_messages[0]["role"] == "system"
         assert SYSTEM_PROMPT in llm_messages[0]["content"]
-        assert "AVAILABLE TOOL NAMES" in llm_messages[0]["content"]
         assert llm_messages[1:] == cli.messages
+
+    def test_messages_for_llm_includes_runtime_instruction(self):
+        """Optional runtime instruction should be appended to system content."""
+        cli = AgentCLI(artifact_store_enabled=False)
+        llm_messages = cli._messages_for_llm(extra_instruction="Do X now")
+
+        assert "RUNTIME INSTRUCTION" in llm_messages[0]["content"]
+        assert "Do X now" in llm_messages[0]["content"]
 
     def test_handle_tool_calls_supports_wrapped_functions_tool(self):
         """Some models wrap real tool calls inside a 'functions' tool payload."""
@@ -176,7 +183,7 @@ class TestAgentCLI:
                 }
             ])
 
-        mock_execute_tool.assert_called_once_with("list_directory", path=".", recursive=True)
+        mock_execute_tool.assert_called_once_with("list_directory", path=".", recursive=False)
 
         with patch("mattbot.cli.execute_tool") as mock_execute_tool:
             mock_execute_tool.return_value = {
@@ -200,3 +207,132 @@ class TestAgentCLI:
             ])
 
         mock_execute_tool.assert_called_once_with("read_file", file_path="README.md")
+
+    def test_list_directory_keeps_recursive_when_user_requested(self):
+        """Recursive listing should be preserved if the user explicitly asks for it."""
+        cli = AgentCLI(artifact_store_enabled=False)
+        cli.active_user_input = "Please recursively list the whole repo as a tree"
+
+        with patch("mattbot.cli.execute_tool") as mock_execute_tool:
+            mock_execute_tool.return_value = {"success": True, "entries": [], "path": "."}
+            cli.handle_tool_calls([
+                {
+                    "id": "call_5",
+                    "function": {
+                        "name": "list_directory",
+                        "arguments": {"path": ".", "recursive": True},
+                    },
+                }
+            ])
+
+        mock_execute_tool.assert_called_once_with("list_directory", path=".", recursive=True)
+
+    def test_is_clarification_response_detection(self):
+        """Clarification-style assistant replies should be detected for fallback handling."""
+        cli = AgentCLI(artifact_store_enabled=False)
+
+        assert cli._is_clarification_response(
+            "I’m ready to make the change, but I need more information. Which file would you like to edit?"
+        )
+        assert not cli._is_clarification_response("Done. I removed the section from README.md.")
+
+    def test_inline_json_edit_payload_executes(self):
+        """Raw JSON edit payload in assistant content should be executed as edit_file."""
+        cli = AgentCLI(artifact_store_enabled=False)
+        payload = (
+            '{"old_content":"A","new_content":"B","file_path":"README.md"}'
+        )
+
+        with patch("mattbot.cli.execute_tool") as mock_execute_tool:
+            mock_execute_tool.return_value = {"success": True, "file_path": "README.md", "replacements_made": 1}
+            result = cli._maybe_execute_inline_edit_from_content(payload)
+
+        mock_execute_tool.assert_called_once_with(
+            "edit_file", file_path="README.md", old_content="A", new_content="B"
+        )
+        assert result is not None
+        assert result["success"] is True
+
+    def test_inline_json_edit_payload_supports_fenced_json(self):
+        """Fenced json payloads should also be parsed and executed."""
+        cli = AgentCLI(artifact_store_enabled=False)
+        payload = """```json
+{"old_content":"A","new_content":"B","file_path":"README.md"}
+```"""
+
+        with patch("mattbot.cli.execute_tool") as mock_execute_tool:
+            mock_execute_tool.return_value = {"success": True, "file_path": "README.md"}
+            result = cli._maybe_execute_inline_edit_from_content(payload)
+
+        mock_execute_tool.assert_called_once()
+        assert result is not None
+        assert result["success"] is True
+
+    def test_build_local_edit_summary(self):
+        """Local summary should deterministically describe edited files."""
+        cli = AgentCLI(artifact_store_enabled=False)
+        summary = cli._build_local_edit_summary([
+            {"tool_name": "edit_file", "file_path": "README.md", "replacements_made": 1},
+            {"tool_name": "write_file", "file_path": "notes.txt", "bytes_written": 42},
+        ])
+
+        assert "Applied the requested edit(s):" in summary
+        assert "README.md (replacements: 1)" in summary
+        assert "notes.txt (bytes written: 42)" in summary
+
+    def test_attempt_direct_section_removal(self):
+        """Deterministic fallback should remove a section from any explicitly targeted file."""
+        cli = AgentCLI(artifact_store_enabled=False)
+        doc = (
+            "# Title\n\n"
+            "## Features\n\n"
+            "- item 1\n"
+            "- item 2\n\n"
+            "## Usage\n\n"
+            "text\n"
+        )
+
+        with patch("mattbot.cli.execute_tool") as mock_execute_tool:
+            mock_execute_tool.side_effect = [
+                {"success": True, "content": doc, "file_path": "docs/guide.md"},
+                {"success": True, "file_path": "docs/guide.md", "replacements_made": 1},
+            ]
+            result = cli._attempt_direct_section_removal(
+                "Please remove the Features section from docs/guide.md"
+            )
+
+        assert result is not None
+        assert result["success"] is True
+        assert result["tool_name"] == "edit_file"
+        assert result["file_path"] == "docs/guide.md"
+
+    def test_infer_target_file_from_request(self):
+        """Target-file inference should handle explicit paths and README shorthand."""
+        cli = AgentCLI(artifact_store_enabled=False)
+
+        assert cli._infer_target_file_from_request("Edit docs/guide.md and remove section") == "docs/guide.md"
+        assert cli._infer_target_file_from_request("Please edit the README in this project") == "README.md"
+
+    def test_process_streamed_response_preserves_role_and_tool_calls(self):
+        """Streaming parser should keep assistant role and retain tool calls."""
+        cli = AgentCLI(artifact_store_enabled=False)
+        response_stream = [
+            {"message": {"role": "assistant", "content": "Hello"}},
+            {
+                "message": {
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "function": {"name": "read_file", "arguments": {"file_path": "README.md"}},
+                        }
+                    ]
+                }
+            },
+        ]
+
+        parsed = cli._process_streamed_response(response_stream)
+
+        assert parsed["message"]["role"] == "assistant"
+        assert parsed["message"]["content"] == "Hello"
+        assert len(parsed["message"]["tool_calls"]) == 1
+        assert parsed["message"]["tool_calls"][0]["id"] == "call_1"

@@ -112,14 +112,14 @@ TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "The directory path to list (defaults to current directory)"
+                        "description": "Optional directory path to list (defaults to current directory)"
                     },
                     "recursive": {
                         "type": "boolean",
                         "description": "Whether to list files recursively (tree view)"
                     }
                 },
-                "required": ["path"]
+                "required": []
             }
         }
     },
