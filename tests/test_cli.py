@@ -183,7 +183,7 @@ class TestAgentCLI:
                 }
             ])
 
-        mock_execute_tool.assert_called_once_with("list_directory", path=".", recursive=False)
+        mock_execute_tool.assert_called_once_with("list_directory", path=".", recursive=True)
 
         with patch("mattbot.cli.execute_tool") as mock_execute_tool:
             mock_execute_tool.return_value = {
@@ -207,34 +207,6 @@ class TestAgentCLI:
             ])
 
         mock_execute_tool.assert_called_once_with("read_file", file_path="README.md")
-
-    def test_list_directory_keeps_recursive_when_user_requested(self):
-        """Recursive listing should be preserved if the user explicitly asks for it."""
-        cli = AgentCLI(artifact_store_enabled=False)
-        cli.active_user_input = "Please recursively list the whole repo as a tree"
-
-        with patch("mattbot.cli.execute_tool") as mock_execute_tool:
-            mock_execute_tool.return_value = {"success": True, "entries": [], "path": "."}
-            cli.handle_tool_calls([
-                {
-                    "id": "call_5",
-                    "function": {
-                        "name": "list_directory",
-                        "arguments": {"path": ".", "recursive": True},
-                    },
-                }
-            ])
-
-        mock_execute_tool.assert_called_once_with("list_directory", path=".", recursive=True)
-
-    def test_is_clarification_response_detection(self):
-        """Clarification-style assistant replies should be detected for fallback handling."""
-        cli = AgentCLI(artifact_store_enabled=False)
-
-        assert cli._is_clarification_response(
-            "I’m ready to make the change, but I need more information. Which file would you like to edit?"
-        )
-        assert not cli._is_clarification_response("Done. I removed the section from README.md.")
 
     def test_inline_json_edit_payload_executes(self):
         """Raw JSON edit payload in assistant content should be executed as edit_file."""
@@ -279,39 +251,6 @@ class TestAgentCLI:
         assert "Applied the requested edit(s):" in summary
         assert "README.md (replacements: 1)" in summary
         assert "notes.txt (bytes written: 42)" in summary
-
-    def test_attempt_direct_section_removal(self):
-        """Deterministic fallback should remove a section from any explicitly targeted file."""
-        cli = AgentCLI(artifact_store_enabled=False)
-        doc = (
-            "# Title\n\n"
-            "## Features\n\n"
-            "- item 1\n"
-            "- item 2\n\n"
-            "## Usage\n\n"
-            "text\n"
-        )
-
-        with patch("mattbot.cli.execute_tool") as mock_execute_tool:
-            mock_execute_tool.side_effect = [
-                {"success": True, "content": doc, "file_path": "docs/guide.md"},
-                {"success": True, "file_path": "docs/guide.md", "replacements_made": 1},
-            ]
-            result = cli._attempt_direct_section_removal(
-                "Please remove the Features section from docs/guide.md"
-            )
-
-        assert result is not None
-        assert result["success"] is True
-        assert result["tool_name"] == "edit_file"
-        assert result["file_path"] == "docs/guide.md"
-
-    def test_infer_target_file_from_request(self):
-        """Target-file inference should handle explicit paths and README shorthand."""
-        cli = AgentCLI(artifact_store_enabled=False)
-
-        assert cli._infer_target_file_from_request("Edit docs/guide.md and remove section") == "docs/guide.md"
-        assert cli._infer_target_file_from_request("Please edit the README in this project") == "README.md"
 
     def test_process_streamed_response_preserves_role_and_tool_calls(self):
         """Streaming parser should keep assistant role and retain tool calls."""

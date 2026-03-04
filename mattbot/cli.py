@@ -5,7 +5,6 @@ Provides an interactive chat interface with tool-calling capabilities.
 """
 import os
 import json
-import re
 import time
 import threading
 from typing import List, Dict, Any
@@ -74,7 +73,6 @@ class AgentCLI:
         self.console = Console(color_system="truecolor")
         self.session_logger = self._create_session_logger()
         self.artifact_store = self._create_artifact_store()
-        self.active_user_input = ""
         
         # Spinner frames for animation
         self.spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -97,50 +95,6 @@ class AgentCLI:
         """Build the message list sent to the model, including system prompt."""
         extra = f"\n\nRUNTIME INSTRUCTION:\n{extra_instruction}" if extra_instruction else ""
         return [{"role": "system", "content": f"{SYSTEM_PROMPT}{extra}"}, *self.messages]
-
-    def _user_requested_recursive_listing(self) -> bool:
-        """Return True if current user request explicitly asks for recursive/tree listing."""
-        text = (self.active_user_input or "").lower()
-        recursive_markers = [
-            "recursive",
-            "recursively",
-            "tree",
-            "all files",
-            "every file",
-            "entire repo",
-            "whole repo",
-            "walk",
-        ]
-        return any(marker in text for marker in recursive_markers)
-
-    def _is_edit_request(self, text: str) -> bool:
-        """Heuristic for whether user is asking for a file/content modification."""
-        lowered = (text or "").lower()
-        edit_markers = [
-            "edit",
-            "change",
-            "modify",
-            "update",
-            "remove",
-            "delete",
-            "replace",
-            "rewrite",
-            "refactor",
-        ]
-        return any(marker in lowered for marker in edit_markers)
-
-    def _is_clarification_response(self, text: str) -> bool:
-        """Heuristic for assistant replies that ask user to restate an already clear request."""
-        lowered = (text or "").lower()
-        clarification_markers = [
-            "need more information",
-            "which file",
-            "what specific",
-            "let me know what you'd like",
-            "how can i help you with",
-            "please provide more details",
-        ]
-        return any(marker in lowered for marker in clarification_markers)
 
     def _normalize_tool_name(self, tool_name: str) -> str:
         """Normalize malformed tool names emitted by some models."""
@@ -169,13 +123,6 @@ class AgentCLI:
         # Practical defaults for malformed empty values
         if tool_name == "list_directory" and not args.get("path"):
             args["path"] = "."
-        if (
-            tool_name == "list_directory"
-            and args.get("path") in {".", "./"}
-            and args.get("recursive") is True
-            and not self._user_requested_recursive_listing()
-        ):
-            args["recursive"] = False
         if tool_name == "run_bash_command" and "working_directory" in args and not args.get("working_directory"):
             args["working_directory"] = self.cwd
 
@@ -286,125 +233,6 @@ class AgentCLI:
                 lines.append(f"- {file_path}")
 
         return "\n".join(lines)
-
-    def _infer_target_file_from_request(self, user_input: str) -> str | None:
-        """Infer target file path from user request text when possible."""
-        text = (user_input or "").strip()
-        if not text:
-            return None
-
-        # Prefer explicit file paths like docs/README.md, config.py, src/foo.ts
-        matches = re.findall(r"\b([A-Za-z0-9_./-]+\.[A-Za-z0-9_+-]+)\b", text)
-        for candidate in matches:
-            lowered = candidate.lower()
-            if lowered.startswith("http://") or lowered.startswith("https://"):
-                continue
-            return candidate
-
-        lowered_text = text.lower()
-        if "readme" in lowered_text:
-            return "README.md"
-
-        return None
-
-    def _attempt_direct_section_removal(self, user_input: str) -> dict[str, Any] | None:
-        """Attempt deterministic markdown section removal for clear edit requests."""
-        lowered = (user_input or "").lower()
-        target_file = self._infer_target_file_from_request(user_input)
-        if not target_file:
-            return None
-
-        section_match = re.search(
-            r"(?:remove|delete)\s+(?:the\s+)?([a-z0-9 _\-]+?)\s+section",
-            lowered,
-            flags=re.IGNORECASE,
-        )
-        if not section_match:
-            return None
-
-        section_name = section_match.group(1).strip()
-        if not section_name:
-            return None
-
-        read_tool_call_id = "direct-section-removal-read"
-        self.session_logger.log_tool_call(
-            tool_name="read_file",
-            arguments={"file_path": target_file},
-            tool_call_id=read_tool_call_id,
-        )
-        read_result = execute_tool("read_file", file_path=target_file)
-        self.session_logger.log_tool_result(
-            tool_name="read_file",
-            result=read_result,
-            tool_call_id=read_tool_call_id,
-        )
-        if not read_result.get("success"):
-            return None
-
-        content = read_result.get("content", "")
-        lines = content.splitlines(keepends=True)
-        header_re = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
-
-        start_idx = None
-        section_level = None
-        wanted = section_name.lower()
-        for idx, line in enumerate(lines):
-            m = header_re.match(line)
-            if not m:
-                continue
-            level = len(m.group(1))
-            title = m.group(2).strip().lower()
-            if title == wanted:
-                start_idx = idx
-                section_level = level
-                break
-
-        if start_idx is None or section_level is None:
-            return None
-
-        end_idx = len(lines)
-        for idx in range(start_idx + 1, len(lines)):
-            m = header_re.match(lines[idx])
-            if m and len(m.group(1)) <= section_level:
-                end_idx = idx
-                break
-
-        old_content = "".join(lines[start_idx:end_idx])
-        if not old_content:
-            return None
-
-        edit_tool_call_id = "direct-section-removal-edit"
-        edit_args = {
-            "file_path": target_file,
-            "old_content": old_content,
-            "new_content": "",
-        }
-        self.session_logger.log_tool_call(
-            tool_name="edit_file",
-            arguments=edit_args,
-            tool_call_id=edit_tool_call_id,
-        )
-        edit_result = execute_tool("edit_file", **edit_args)
-        self.session_logger.log_tool_result(
-            tool_name="edit_file",
-            result=edit_result,
-            tool_call_id=edit_tool_call_id,
-        )
-
-        if edit_result.get("success"):
-            self.messages.append({
-                "role": "tool",
-                "tool_call_id": edit_tool_call_id,
-                "content": self._format_tool_result_for_model(tool_name="edit_file", result=edit_result),
-            })
-            return {
-                "success": True,
-                "tool_name": "edit_file",
-                "file_path": target_file,
-                "replacements_made": edit_result.get("replacements_made"),
-            }
-
-        return None
 
     def _session_metadata(self) -> Dict[str, Any]:
         """Build metadata recorded at session start."""
@@ -832,7 +660,6 @@ class AgentCLI:
         self.start_status_display()
         
         try:
-            self.active_user_input = user_input
             # Add user message
             self.messages.append({
                 "role": "user",
@@ -877,9 +704,6 @@ class AgentCLI:
             # Handle tool calls if present
             max_iterations = 10  # Prevent infinite loops
             iteration = 0
-            read_only_streak = 0
-            edit_request = self._is_edit_request(user_input)
-            mutating_executed = False
             successful_mutations: list[dict[str, Any]] = []
             
             while full_response["message"].get("tool_calls") and iteration < max_iterations:
@@ -916,47 +740,12 @@ class AgentCLI:
                             "bytes_written": parsed.get("bytes_written"),
                         })
 
-                normalized_tool_names = {
-                    self._normalize_tool_name(tc.get("function", {}).get("name", ""))
-                    for tc in tool_calls
-                }
-                read_only_tools = {"read_file", "list_directory", "grep_search", "semantic_search"}
-                mutating_tools = {"edit_file", "write_file"}
-                if normalized_tool_names and normalized_tool_names.issubset(read_only_tools):
-                    read_only_streak += 1
-                elif normalized_tool_names.intersection(mutating_tools):
-                    mutating_executed = True
-                    read_only_streak = 0
-
-                if edit_request and read_only_streak >= 5:
-                    direct = self._attempt_direct_section_removal(user_input)
-                    if direct and direct.get("success"):
-                        summary = self._build_local_edit_summary([direct])
-                        self.messages.append({"role": "assistant", "content": summary, "tool_calls": []})
-                        self.session_logger.log_message("assistant", summary, tool_call_count=0)
-                        return summary
-
-                    fallback = (
-                        "I couldn't complete the edit automatically because the model kept making read-only tool calls. "
-                        "Please retry with a more specific edit instruction (file + section), and I'll apply it directly."
-                    )
-                    self.messages.append({"role": "assistant", "content": fallback, "tool_calls": []})
-                    self.session_logger.log_message("assistant", fallback, tool_call_count=0)
-                    return fallback
-
-                extra_instruction = None
-                if edit_request and read_only_streak >= 2:
-                    extra_instruction = (
-                        "User requested an edit. Stop exploratory reads and directory listings. "
-                        "Do not ask for clarification. Call edit_file or write_file now, then do at most one read_file to verify."
-                    )
-                
                 # Get next response from LLM with streaming
                 self.update_status("LLM processing tool results", "llm")
                 
                 response_stream = self.client.chat(
                     model=self.model,
-                    messages=self._messages_for_llm(extra_instruction=extra_instruction),
+                    messages=self._messages_for_llm(),
                     tools=TOOLS,
                     stream=True,
                     temperature=self.temperature,
@@ -988,30 +777,18 @@ class AgentCLI:
 
             final_content = full_response["message"].get("content", "")
 
-            if edit_request and successful_mutations:
+            if successful_mutations:
                 summary = self._build_local_edit_summary(successful_mutations)
                 self.messages.append({"role": "assistant", "content": summary, "tool_calls": []})
                 self.session_logger.log_message("assistant", summary, tool_call_count=0)
                 return summary
 
-            if edit_request and not mutating_executed:
-                inline_result = self._maybe_execute_inline_edit_from_content(final_content)
-                if inline_result and inline_result.get("success"):
-                    success_message = "Applied the requested edit."
-                    self.messages.append({"role": "assistant", "content": success_message, "tool_calls": []})
-                    self.session_logger.log_message("assistant", success_message, tool_call_count=0)
-                    return success_message
-
-            if edit_request and not mutating_executed and (
-                read_only_streak >= 2 or self._is_clarification_response(final_content)
-            ):
-                fallback = (
-                    "I couldn't complete the edit automatically because the model kept making read-only calls and did not apply changes. "
-                    "Please retry with an explicit target like: 'Edit README.md: remove the Features section'."
-                )
-                self.messages.append({"role": "assistant", "content": fallback, "tool_calls": []})
-                self.session_logger.log_message("assistant", fallback, tool_call_count=0)
-                return fallback
+            inline_result = self._maybe_execute_inline_edit_from_content(final_content)
+            if inline_result and inline_result.get("success"):
+                success_message = "Applied the requested edit."
+                self.messages.append({"role": "assistant", "content": success_message, "tool_calls": []})
+                self.session_logger.log_message("assistant", success_message, tool_call_count=0)
+                return success_message
             
             # Display context metrics before closing status
             stats = self.client.get_context_stats()
