@@ -101,6 +101,45 @@ class AgentCLI:
         )
         return [{"role": "system", "content": f"{SYSTEM_PROMPT}{tool_instructions}"}, *self.messages]
 
+    def _normalize_tool_name(self, tool_name: str) -> str:
+        """Normalize malformed tool names emitted by some models."""
+        name = (tool_name or "").strip()
+
+        # Strip accidental channel/control suffixes like: edit_file<|channel|>commentary
+        if "<|" in name:
+            name = name.split("<|", 1)[0].strip()
+
+        # Handle dotted wrappers like functions.edit_file
+        if name not in {tool["function"]["name"] for tool in TOOLS} and "." in name:
+            candidate = name.split(".")[-1].strip()
+            if candidate in {tool["function"]["name"] for tool in TOOLS}:
+                name = candidate
+
+        return name
+
+    def _sanitize_tool_arguments(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Filter/normalize arguments so tool calls match schema and runtime expectations."""
+        args = dict(arguments)
+
+        # Common alias emitted by models
+        if "filename" in args and "file_path" not in args:
+            args["file_path"] = args["filename"]
+
+        # Practical defaults for malformed empty values
+        if tool_name == "list_directory" and not args.get("path"):
+            args["path"] = "."
+        if tool_name == "run_bash_command" and "working_directory" in args and not args.get("working_directory"):
+            args["working_directory"] = self.cwd
+
+        # Keep only schema-declared keys for the selected tool
+        tool_def = next((tool for tool in TOOLS if tool.get("function", {}).get("name") == tool_name), None)
+        if tool_def:
+            props = tool_def.get("function", {}).get("parameters", {}).get("properties", {})
+            allowed = set(props.keys())
+            args = {k: v for k, v in args.items() if k in allowed}
+
+        return args
+
     def _session_metadata(self) -> Dict[str, Any]:
         """Build metadata recorded at session start."""
         return {
@@ -443,7 +482,7 @@ class AgentCLI:
         tool_results = []
         
         for tool_call in tool_calls:
-            tool_name = tool_call["function"]["name"]
+            tool_name = self._normalize_tool_name(tool_call["function"]["name"])
             
             # Update status with tool name
             self.update_status(f"Running: {tool_name}", "tool")
@@ -464,8 +503,10 @@ class AgentCLI:
                 wrapped_name = arguments.get("name")
                 wrapped_arguments = arguments.get("arguments", {})
                 if isinstance(wrapped_name, str) and wrapped_name in [t["function"]["name"] for t in TOOLS]:
-                    tool_name = wrapped_name
+                    tool_name = self._normalize_tool_name(wrapped_name)
                     arguments = wrapped_arguments if isinstance(wrapped_arguments, dict) else {}
+
+            arguments = self._sanitize_tool_arguments(tool_name=tool_name, arguments=arguments)
 
             self.session_logger.log_tool_call(
                 tool_name=tool_name,

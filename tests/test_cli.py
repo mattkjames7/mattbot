@@ -136,3 +136,67 @@ class TestAgentCLI:
         )
         assert len(results) == 1
         assert results[0]["role"] == "tool"
+
+    def test_handle_tool_calls_normalizes_tool_name_suffix(self):
+        """Malformed tool names with channel suffixes should still execute."""
+        cli = AgentCLI(artifact_store_enabled=False)
+        tool_calls = [{
+            "id": "call_2",
+            "function": {
+                "name": "edit_file<|channel|>commentary",
+                "arguments": {
+                    "file_path": "README.md",
+                    "old_content": "a",
+                    "new_content": "b",
+                },
+            },
+        }]
+
+        with patch("mattbot.cli.execute_tool") as mock_execute_tool:
+            mock_execute_tool.return_value = {"success": True, "file_path": "README.md"}
+            cli.handle_tool_calls(tool_calls)
+
+        mock_execute_tool.assert_called_once_with(
+            "edit_file", file_path="README.md", old_content="a", new_content="b"
+        )
+
+    def test_handle_tool_calls_sanitizes_arguments(self):
+        """Unexpected args should be dropped and empty list_directory path normalized."""
+        cli = AgentCLI(artifact_store_enabled=False)
+
+        with patch("mattbot.cli.execute_tool") as mock_execute_tool:
+            mock_execute_tool.return_value = {"success": True, "entries": [], "path": "."}
+            cli.handle_tool_calls([
+                {
+                    "id": "call_3",
+                    "function": {
+                        "name": "list_directory",
+                        "arguments": {"path": "", "recursive": True},
+                    },
+                }
+            ])
+
+        mock_execute_tool.assert_called_once_with("list_directory", path=".", recursive=True)
+
+        with patch("mattbot.cli.execute_tool") as mock_execute_tool:
+            mock_execute_tool.return_value = {
+                "success": True,
+                "content": "x",
+                "file_path": "README.md",
+                "lines_read": 1,
+            }
+            cli.handle_tool_calls([
+                {
+                    "id": "call_4",
+                    "function": {
+                        "name": "read_file",
+                        "arguments": {
+                            "file_path": "README.md",
+                            "lines_read": 50,
+                            "total_lines": 203,
+                        },
+                    },
+                }
+            ])
+
+        mock_execute_tool.assert_called_once_with("read_file", file_path="README.md")
