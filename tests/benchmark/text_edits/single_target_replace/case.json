@@ -1,0 +1,13 @@
+{
+  "name": "single_target_replace",
+  "instruction": "Replace the word 'colour' with 'color' in document.txt. Do not modify any other files.",
+  "assertions": [
+    {"type": "contains", "file": "document.txt", "text": "color palette"},
+    {"type": "not_contains", "file": "document.txt", "text": "colour palette"}
+  ],
+  "scope_assertions": [
+    {"type": "unchanged", "file": "notes.txt"}
+  ],
+  "expected_changed_files": ["document.txt"],
+  "max_changed_files": 1
+}

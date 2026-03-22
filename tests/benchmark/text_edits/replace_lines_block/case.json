@@ -1,0 +1,15 @@
+{
+  "name": "replace_lines_block",
+  "instruction": "In app.env replace the DATABASE_URL line with DATABASE_URL=postgresql://localhost/newdb and replace CACHE_TTL with CACHE_TTL=900.",
+  "assertions": [
+    {"type": "contains", "file": "app.env", "text": "DATABASE_URL=postgresql://localhost/newdb"},
+    {"type": "contains", "file": "app.env", "text": "CACHE_TTL=900"},
+    {"type": "not_contains", "file": "app.env", "text": "DATABASE_URL=postgresql://localhost/olddb"},
+    {"type": "not_contains", "file": "app.env", "text": "CACHE_TTL=300"}
+  ],
+  "scope_assertions": [
+    {"type": "unchanged", "file": "keep.txt"}
+  ],
+  "expected_changed_files": ["app.env"],
+  "max_changed_files": 1
+}

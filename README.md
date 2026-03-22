@@ -106,6 +106,28 @@ pytest tests/test_tool_executor.py -v
 pytest tests/ -k "not integration"
 ```
 
+### Editing benchmark cases
+
+The repository includes repeatable editing benchmark fixtures under [tests/benchmark](tests/benchmark).
+
+Run text-edit benchmark cases against your own agent command:
+
+```bash
+python tests/benchmark/runner.py \
+    --feature text_edits \
+    --runs 10 \
+    --agent-command "python {repo_root}/your_agent_driver.py --workspace {workspace} --instruction-file {instruction_file}"
+```
+
+For a local smoke test without an LLM, use the deterministic sample executor:
+
+```bash
+python tests/benchmark/runner.py \
+    --feature text_edits \
+    --runs 3 \
+    --agent-command "python {repo_root}/tests/benchmark/sample_agent.py --workspace {workspace} --instruction-file {instruction_file}"
+```
+
 ## Usage
 
 ### Interactive CLI

@@ -1,0 +1,13 @@
+{
+  "name": "anchored_insertion",
+  "instruction": "Add the line 'enabled=true' immediately before '# END CONFIG' in config.ini. Do not duplicate it.",
+  "assertions": [
+    {"type": "contains", "file": "config.ini", "text": "enabled=true\n# END CONFIG"},
+    {"type": "count_equals", "file": "config.ini", "text": "enabled=true", "equals": 1}
+  ],
+  "scope_assertions": [
+    {"type": "unchanged", "file": "README.txt"}
+  ],
+  "expected_changed_files": ["config.ini"],
+  "max_changed_files": 1
+}

@@ -1,0 +1,15 @@
+{
+  "name": "remove_lines_block",
+  "instruction": "In config.ini remove the deprecated block between '# BEGIN_DEPRECATED' and '# END_DEPRECATED' inclusive.",
+  "assertions": [
+    {"type": "not_contains", "file": "config.ini", "text": "# BEGIN_DEPRECATED"},
+    {"type": "not_contains", "file": "config.ini", "text": "legacy_mode=true"},
+    {"type": "contains", "file": "config.ini", "text": "[core]"},
+    {"type": "contains", "file": "config.ini", "text": "enabled=true"}
+  ],
+  "scope_assertions": [
+    {"type": "unchanged", "file": "README.txt"}
+  ],
+  "expected_changed_files": ["config.ini"],
+  "max_changed_files": 1
+}
