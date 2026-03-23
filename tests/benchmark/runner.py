@@ -172,7 +172,11 @@ def _discover_cases(root: Path, feature: str | None) -> list[CaseSpec]:
     return [_load_case(path) for path in case_files]
 
 
-def _evaluate_case_run(case: CaseSpec, command_template: str) -> RunEvaluation:
+def _evaluate_case_run(
+    case: CaseSpec,
+    command_template: str,
+    timeout_override_seconds: int | None = None,
+) -> RunEvaluation:
     fixture_root = case.case_path / "fixture"
     if not fixture_root.exists():
         raise FileNotFoundError(f"Fixture directory is required: {fixture_root}")
@@ -195,12 +199,14 @@ def _evaluate_case_run(case: CaseSpec, command_template: str) -> RunEvaluation:
             repo_root=shlex.quote(str(repo_root)),
         )
 
+        effective_timeout = timeout_override_seconds or case.timeout_seconds
+
         try:
-            cmd_result = _run_command(command, workspace, case.timeout_seconds)
+            cmd_result = _run_command(command, workspace, effective_timeout)
         except subprocess.TimeoutExpired:
             return RunEvaluation(
                 status="hard_fail",
-                intent_failures=[f"Command timed out after {case.timeout_seconds}s"],
+                intent_failures=[f"Command timed out after {effective_timeout}s"],
                 scope_failures=[],
                 changed_files=[],
                 command=CommandResult(exit_code=124, stdout="", stderr="timeout"),
@@ -305,6 +311,15 @@ def main() -> int:
         action="store_true",
         help="Stop at first hard fail",
     )
+    parser.add_argument(
+        "--warmup-seconds",
+        type=int,
+        default=120,
+        help=(
+            "Extra timeout buffer added only to the very first run, "
+            "useful for initial model loading (default: 120)."
+        ),
+    )
 
     args = parser.parse_args()
     benchmark_root = Path(args.benchmark_root)
@@ -321,12 +336,27 @@ def main() -> int:
     overall: Counter[str] = Counter()
     per_case: dict[str, list[RunEvaluation]] = {}
 
+    is_first_run = True
+
     for case in cases:
         case_results: list[RunEvaluation] = []
         print(f"Running case: {case.name}")
 
         for run_index in range(1, args.runs + 1):
-            evaluation = _evaluate_case_run(case, args.agent_command)
+            timeout_override = None
+            if is_first_run and args.warmup_seconds > 0:
+                timeout_override = case.timeout_seconds + args.warmup_seconds
+                print(
+                    f"  applying first-run warmup buffer: +{args.warmup_seconds}s "
+                    f"(timeout={timeout_override}s)"
+                )
+
+            evaluation = _evaluate_case_run(
+                case,
+                args.agent_command,
+                timeout_override_seconds=timeout_override,
+            )
+            is_first_run = False
             case_results.append(evaluation)
             overall[evaluation.status] += 1
 

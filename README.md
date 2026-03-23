@@ -116,6 +116,7 @@ Run text-edit benchmark cases against your own agent command:
 python tests/benchmark/runner.py \
     --feature text_edits \
     --runs 10 \
+    --warmup-seconds 120 \
     --agent-command "python {repo_root}/your_agent_driver.py --workspace {workspace} --instruction-file {instruction_file}"
 ```
 
