@@ -1,0 +1,3 @@
+Theme settings:
+- Primary colour palette: ocean
+- Secondary colour palette: sunset

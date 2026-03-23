@@ -1,0 +1,16 @@
+{
+  "name": "spelling_comments_only",
+  "instruction": "Fix spelling mistakes in comments only inside module.py. Do not change identifiers or string literals.",
+  "assertions": [
+    {"type": "contains", "file": "module.py", "text": "# This function calculates a response"},
+    {"type": "contains", "file": "module.py", "text": "# Keep this typo in a literal: \"teh\""},
+    {"type": "contains", "file": "module.py", "text": "return \"teh\""},
+    {"type": "python_syntax", "file": "module.py"}
+  ],
+  "scope_assertions": [
+    {"type": "not_contains", "file": "module.py", "text": "# This funtion calcualtes a responce"},
+    {"type": "unchanged", "file": "control.txt"}
+  ],
+  "expected_changed_files": ["module.py"],
+  "max_changed_files": 1
+}

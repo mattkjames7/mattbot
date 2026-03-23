@@ -87,6 +87,9 @@ class AgentCLI:
         self.status_lock = threading.Lock()
         self.readline_enabled = False
         self.command_processor = CommandProcessor(self)
+        self.tool_call_counts: Dict[str, int] = {}
+        self.total_tool_calls: int = 0
+        self.last_run_summary: Dict[str, Any] = {}
 
         self._setup_readline()
 
@@ -433,6 +436,8 @@ class AgentCLI:
         
         for tool_call in tool_calls:
             tool_name = tool_call["function"]["name"]
+            self.tool_call_counts[tool_name] = self.tool_call_counts.get(tool_name, 0) + 1
+            self.total_tool_calls += 1
             
             # Update status with tool name
             self.update_status(f"Running: {tool_name}", "tool")
@@ -485,6 +490,9 @@ class AgentCLI:
     def chat(self, user_input: str) -> str:
         """Send a message and handle tool calls."""
         self.last_committed_status = None
+        self.tool_call_counts = {}
+        self.total_tool_calls = 0
+        self.last_run_summary = {}
         self.start_status_display()
         
         try:
@@ -593,6 +601,14 @@ class AgentCLI:
             )
             self.update_status(final_status, "done")
             time.sleep(0.5)  # Brief pause to show completion
+
+            self.last_run_summary = {
+                "success": True,
+                "tool_call_total": self.total_tool_calls,
+                "tool_call_counts": dict(sorted(self.tool_call_counts.items())),
+                "context_tokens": stats.get("context_length"),
+                "completion_tokens": stats.get("completion_tokens"),
+            }
             
             # Return final content
             return full_response["message"].get("content", "")
@@ -775,13 +791,37 @@ def main():
         action="store_true",
         help="Create a default config file (if missing) and exit"
     )
+    prompt_group = parser.add_mutually_exclusive_group()
+    prompt_group.add_argument(
+        "--prompt",
+        type=str,
+        default=None,
+        help="Run one non-interactive turn with this prompt and exit"
+    )
+    prompt_group.add_argument(
+        "--prompt-file",
+        type=str,
+        default=None,
+        help="Run one non-interactive turn using prompt text from this file and exit"
+    )
+    parser.add_argument(
+        "--emit-run-summary-json",
+        action="store_true",
+        help="In single-prompt mode, emit one machine-readable summary line to stdout"
+    )
+    parser.add_argument(
+        "--run-summary-json-file",
+        type=str,
+        default=None,
+        help="In single-prompt mode, write machine-readable summary JSON to this file"
+    )
     
     args = parser.parse_args()
 
     if args.init_config:
         config_path = ensure_config_file(args.config)
         print(f"Config ready at: {config_path}")
-        return
+        return 0
 
     config = resolve_config(cli_args=args, config_path=args.config)
     
@@ -801,8 +841,37 @@ def main():
         artifact_inline_char_limit=config.artifact_inline_char_limit,
         config_path=args.config,
     )
-    cli.run()
+
+    try:
+        prompt_text = None
+        if args.prompt is not None:
+            prompt_text = args.prompt
+        elif args.prompt_file is not None:
+            with open(args.prompt_file, "r", encoding="utf-8") as f:
+                prompt_text = f.read().strip()
+
+        if prompt_text is not None:
+            if not prompt_text:
+                raise ValueError("Prompt is empty")
+            cli.chat(prompt_text)
+
+            summary_payload = dict(getattr(cli, "last_run_summary", {}) or {})
+            if args.emit_run_summary_json:
+                print("MATTBOT_RUN_SUMMARY_JSON:" + json.dumps(summary_payload, ensure_ascii=False))
+
+            if args.run_summary_json_file:
+                with open(args.run_summary_json_file, "w", encoding="utf-8") as summary_file:
+                    json.dump(summary_payload, summary_file, ensure_ascii=False, indent=2)
+
+            cli.close(reason="single_prompt")
+            return 0
+
+        cli.run()
+        return 0
+    except Exception:
+        cli.close(reason="error")
+        raise
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

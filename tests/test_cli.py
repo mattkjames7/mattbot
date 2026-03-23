@@ -1,7 +1,9 @@
 """Tests for the CLI module."""
 import pytest
+from types import SimpleNamespace
 from unittest.mock import patch
 
+import mattbot.cli as cli_module
 from mattbot.cli import AgentCLI
 
 
@@ -94,3 +96,121 @@ class TestAgentCLI:
         assert "artifact_id" in formatted
         assert "truncated" in formatted
         assert "raw_size_chars" in formatted
+
+
+class TestCliMain:
+    """Tests for CLI entrypoint behavior."""
+
+    def test_main_prompt_file_runs_single_turn(self, tmp_path, monkeypatch):
+        """`--prompt-file` should run one turn and exit without interactive loop."""
+        prompt_file = tmp_path / "prompt.txt"
+        prompt_file.write_text("hello from benchmark", encoding="utf-8")
+
+        fake_config = SimpleNamespace(
+            model="gpt-oss:latest",
+            ollama_url="http://localhost:11434",
+            max_context_tokens=8192,
+            temperature=0.7,
+            embedding_model="all-minilm:l6-v2",
+            history_length=100,
+            logging_enabled=False,
+            log_dir="~/.mattbot/logs",
+            artifact_store_enabled=False,
+            artifact_dir="~/.mattbot/artifacts",
+            artifact_ttl_days=7,
+            artifact_max_sessions=20,
+            artifact_inline_char_limit=8000,
+        )
+
+        class FakeCLI:
+            chat_called = False
+            run_called = False
+            close_called = False
+
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+            def chat(self, prompt):
+                assert prompt == "hello from benchmark"
+                FakeCLI.chat_called = True
+                return "ok"
+
+            def run(self):
+                FakeCLI.run_called = True
+
+            def close(self, reason="session_end"):
+                FakeCLI.close_called = True
+
+        monkeypatch.setattr(
+            cli_module,
+            "resolve_config",
+            lambda cli_args, config_path: fake_config,
+        )
+        monkeypatch.setattr(cli_module, "AgentCLI", FakeCLI)
+        monkeypatch.setattr(
+            "sys.argv",
+            ["mattbot", "--prompt-file", str(prompt_file)],
+        )
+
+        exit_code = cli_module.main()
+
+        assert exit_code == 0
+        assert FakeCLI.chat_called is True
+        assert FakeCLI.close_called is True
+        assert FakeCLI.run_called is False
+
+    def test_main_emits_run_summary_json(self, tmp_path, monkeypatch, capsys):
+        """`--emit-run-summary-json` should print summary marker with JSON payload."""
+        prompt_file = tmp_path / "prompt.txt"
+        prompt_file.write_text("hello from benchmark", encoding="utf-8")
+
+        fake_config = SimpleNamespace(
+            model="gpt-oss:latest",
+            ollama_url="http://localhost:11434",
+            max_context_tokens=8192,
+            temperature=0.7,
+            embedding_model="all-minilm:l6-v2",
+            history_length=100,
+            logging_enabled=False,
+            log_dir="~/.mattbot/logs",
+            artifact_store_enabled=False,
+            artifact_dir="~/.mattbot/artifacts",
+            artifact_ttl_days=7,
+            artifact_max_sessions=20,
+            artifact_inline_char_limit=8000,
+        )
+
+        class FakeCLI:
+            def __init__(self, **kwargs):
+                self.last_run_summary = {
+                    "success": True,
+                    "tool_call_total": 3,
+                    "tool_call_counts": {"read_file": 2, "edit_file": 1},
+                }
+
+            def chat(self, prompt):
+                return "ok"
+
+            def run(self):
+                raise AssertionError("run() should not be called")
+
+            def close(self, reason="session_end"):
+                return None
+
+        monkeypatch.setattr(
+            cli_module,
+            "resolve_config",
+            lambda cli_args, config_path: fake_config,
+        )
+        monkeypatch.setattr(cli_module, "AgentCLI", FakeCLI)
+        monkeypatch.setattr(
+            "sys.argv",
+            ["mattbot", "--prompt-file", str(prompt_file), "--emit-run-summary-json"],
+        )
+
+        exit_code = cli_module.main()
+        captured = capsys.readouterr()
+
+        assert exit_code == 0
+        assert "MATTBOT_RUN_SUMMARY_JSON:" in captured.out
+        assert '"tool_call_total": 3' in captured.out
