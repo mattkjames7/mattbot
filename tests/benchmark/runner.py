@@ -471,9 +471,11 @@ def main() -> int:
 
     is_first_run = True
 
-    for case in cases:
+    total_cases = len(cases)
+
+    for case_index, case in enumerate(cases, start=1):
         case_results: list[RunEvaluation] = []
-        print(f"Running case: {case.name}")
+        print(f"Running case {case_index}/{total_cases}: {case.name}")
 
         for run_index in range(1, args.runs + 1):
             timeout_override = None
