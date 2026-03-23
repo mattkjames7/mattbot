@@ -117,6 +117,7 @@ python tests/benchmark/runner.py \
     --feature text_edits \
     --runs 10 \
     --warmup-seconds 120 \
+    --report-dir tests/benchmark/reports \
     --agent-command "python {repo_root}/your_agent_driver.py --workspace {workspace} --instruction-file {instruction_file}"
 ```
 

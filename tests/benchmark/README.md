@@ -18,6 +18,7 @@ python tests/benchmark/runner.py \
   --feature text_edits \
   --runs 10 \
   --warmup-seconds 120 \
+  --report-dir tests/benchmark/reports \
   --agent-command "python {repo_root}/your_agent_driver.py --workspace {workspace} --instruction-file {instruction_file}"
 ```
 
@@ -36,3 +37,5 @@ Supported placeholders in `--agent-command`:
 - `hard_fail` means intended behavior failed (or command failed).
 - Results include per-case rates over repeated runs for statistical benchmarking.
 - The first run gets an extra timeout buffer (`--warmup-seconds`, default `120`) to absorb initial model load latency.
+- A human-readable YAML report is written per case (default folder: `tests/benchmark/reports`).
+- Each report includes per-run `before`, `after`, and unified `diff` for fixture files.

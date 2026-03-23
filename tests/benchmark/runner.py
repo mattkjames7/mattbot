@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import difflib
 import json
 import shlex
 import shutil
@@ -29,7 +30,17 @@ class RunEvaluation:
     intent_failures: list[str]
     scope_failures: list[str]
     changed_files: list[str]
+    file_reports: list["FileReport"]
     command: CommandResult
+
+
+@dataclass
+class FileReport:
+    path: str
+    changed: bool
+    before: str
+    after: str
+    diff: str
 
 
 @dataclass
@@ -78,6 +89,117 @@ def _run_command(command: str, cwd: Path, timeout_seconds: int) -> CommandResult
         stdout=completed.stdout,
         stderr=completed.stderr,
     )
+
+
+def _build_file_reports(before: dict[str, str], after: dict[str, str]) -> list[FileReport]:
+    reports: list[FileReport] = []
+    for rel in sorted(set(before) | set(after)):
+        if rel == ".benchmark_instruction.txt":
+            continue
+        before_text = before.get(rel, "")
+        after_text = after.get(rel, "")
+        changed = before_text != after_text
+        diff = ""
+        if changed:
+            diff_lines = difflib.unified_diff(
+                before_text.splitlines(),
+                after_text.splitlines(),
+                fromfile=f"before/{rel}",
+                tofile=f"after/{rel}",
+                lineterm="",
+            )
+            diff = "\n".join(diff_lines)
+        reports.append(
+            FileReport(
+                path=rel,
+                changed=changed,
+                before=before_text,
+                after=after_text,
+                diff=diff,
+            )
+        )
+    return reports
+
+
+def _yaml_quote(value: str) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _append_yaml_list(lines: list[str], key: str, values: list[str], indent: int) -> None:
+    prefix = " " * indent
+    if not values:
+        lines.append(f"{prefix}{key}: []")
+        return
+    lines.append(f"{prefix}{key}:")
+    for item in values:
+        lines.append(f"{prefix}  - {_yaml_quote(item)}")
+
+
+def _append_yaml_block(lines: list[str], key: str, value: str, indent: int) -> None:
+    prefix = " " * indent
+    if value == "":
+        lines.append(f"{prefix}{key}: \"\"")
+        return
+    lines.append(f"{prefix}{key}: |-")
+    for line in value.splitlines():
+        lines.append(f"{prefix}  {line}")
+
+
+def _render_case_report_yaml(case: CaseSpec, results: list[RunEvaluation]) -> str:
+    counts = Counter(r.status for r in results)
+    total = len(results)
+    pass_rate = (counts.get("pass", 0) / total) * 100 if total else 0.0
+    soft_fail_rate = (counts.get("soft_fail", 0) / total) * 100 if total else 0.0
+    hard_fail_rate = (counts.get("hard_fail", 0) / total) * 100 if total else 0.0
+
+    lines: list[str] = []
+    lines.append(f"case: {_yaml_quote(case.name)}")
+    lines.append(f"case_path: {_yaml_quote(case.case_path.as_posix())}")
+    lines.append(f"instruction: {_yaml_quote(case.instruction)}")
+    lines.append("summary:")
+    lines.append(f"  total_runs: {total}")
+    lines.append(f"  pass: {counts.get('pass', 0)}")
+    lines.append(f"  soft_fail: {counts.get('soft_fail', 0)}")
+    lines.append(f"  hard_fail: {counts.get('hard_fail', 0)}")
+    lines.append(f"  pass_rate_percent: {pass_rate:.1f}")
+    lines.append(f"  soft_fail_rate_percent: {soft_fail_rate:.1f}")
+    lines.append(f"  hard_fail_rate_percent: {hard_fail_rate:.1f}")
+    lines.append("runs:")
+
+    for run_idx, evaluation in enumerate(results, start=1):
+        lines.append(f"  - run: {run_idx}")
+        lines.append(f"    status: {_yaml_quote(evaluation.status)}")
+        _append_yaml_list(lines, "intent_failures", evaluation.intent_failures, indent=4)
+        _append_yaml_list(lines, "scope_failures", evaluation.scope_failures, indent=4)
+        _append_yaml_list(lines, "changed_files", evaluation.changed_files, indent=4)
+        lines.append("    command:")
+        lines.append(f"      exit_code: {evaluation.command.exit_code}")
+        _append_yaml_block(lines, "stdout", evaluation.command.stdout, indent=6)
+        _append_yaml_block(lines, "stderr", evaluation.command.stderr, indent=6)
+        lines.append("    files:")
+        for file_report in evaluation.file_reports:
+            lines.append(f"      - path: {_yaml_quote(file_report.path)}")
+            lines.append(f"        changed: {'true' if file_report.changed else 'false'}")
+            _append_yaml_block(lines, "before", file_report.before, indent=8)
+            _append_yaml_block(lines, "after", file_report.after, indent=8)
+            _append_yaml_block(lines, "diff", file_report.diff, indent=8)
+
+    return "\n".join(lines) + "\n"
+
+
+def _write_case_report(
+    benchmark_root: Path,
+    case: CaseSpec,
+    results: list[RunEvaluation],
+    report_dir: Path,
+) -> Path:
+    rel_case_dir = case.case_path.relative_to(benchmark_root).as_posix()
+    report_name = rel_case_dir.replace("/", "__") + ".yaml"
+    report_path = report_dir / report_name
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_content = _render_case_report_yaml(case, results)
+    report_path.write_text(report_content, encoding="utf-8")
+    return report_path
 
 
 def _eval_assertion(assertion: dict[str, Any], workspace: Path, before: dict[str, str]) -> str | None:
@@ -209,6 +331,7 @@ def _evaluate_case_run(
                 intent_failures=[f"Command timed out after {effective_timeout}s"],
                 scope_failures=[],
                 changed_files=[],
+                file_reports=[],
                 command=CommandResult(exit_code=124, stdout="", stderr="timeout"),
             )
 
@@ -219,6 +342,7 @@ def _evaluate_case_run(
             if before.get(rel, "") != after.get(rel, "")
             and rel != ".benchmark_instruction.txt"
         )
+        file_reports = _build_file_reports(before, after)
 
         intent_failures: list[str] = []
         scope_failures: list[str] = []
@@ -269,6 +393,7 @@ def _evaluate_case_run(
             intent_failures=intent_failures,
             scope_failures=scope_failures,
             changed_files=changed_files,
+            file_reports=file_reports,
             command=cmd_result,
         )
 
@@ -320,12 +445,20 @@ def main() -> int:
             "useful for initial model loading (default: 120)."
         ),
     )
+    parser.add_argument(
+        "--report-dir",
+        default="tests/benchmark/reports",
+        help="Directory where per-case YAML reports are written",
+    )
 
     args = parser.parse_args()
     benchmark_root = Path(args.benchmark_root)
 
     if not benchmark_root.exists():
         raise SystemExit(f"Benchmark root not found: {benchmark_root}")
+
+    report_dir = Path(args.report_dir)
+    report_dir.mkdir(parents=True, exist_ok=True)
 
     cases = _discover_cases(benchmark_root, args.feature)
     if not cases:
@@ -373,6 +506,8 @@ def main() -> int:
                 break
 
         per_case[case.name] = case_results
+        report_path = _write_case_report(benchmark_root, case, case_results, report_dir)
+        print(f"  report: {report_path}")
         _print_case_summary(case.name, case_results)
         print()
 
