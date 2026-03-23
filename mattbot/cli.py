@@ -775,13 +775,26 @@ def main():
         action="store_true",
         help="Create a default config file (if missing) and exit"
     )
+    prompt_group = parser.add_mutually_exclusive_group()
+    prompt_group.add_argument(
+        "--prompt",
+        type=str,
+        default=None,
+        help="Run one non-interactive turn with this prompt and exit"
+    )
+    prompt_group.add_argument(
+        "--prompt-file",
+        type=str,
+        default=None,
+        help="Run one non-interactive turn using prompt text from this file and exit"
+    )
     
     args = parser.parse_args()
 
     if args.init_config:
         config_path = ensure_config_file(args.config)
         print(f"Config ready at: {config_path}")
-        return
+        return 0
 
     config = resolve_config(cli_args=args, config_path=args.config)
     
@@ -801,8 +814,28 @@ def main():
         artifact_inline_char_limit=config.artifact_inline_char_limit,
         config_path=args.config,
     )
-    cli.run()
+
+    try:
+        prompt_text = None
+        if args.prompt is not None:
+            prompt_text = args.prompt
+        elif args.prompt_file is not None:
+            with open(args.prompt_file, "r", encoding="utf-8") as f:
+                prompt_text = f.read().strip()
+
+        if prompt_text is not None:
+            if not prompt_text:
+                raise ValueError("Prompt is empty")
+            cli.chat(prompt_text)
+            cli.close(reason="single_prompt")
+            return 0
+
+        cli.run()
+        return 0
+    except Exception:
+        cli.close(reason="error")
+        raise
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
