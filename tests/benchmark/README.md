@@ -19,7 +19,7 @@ python tests/benchmark/runner.py \
   --runs 10 \
   --warmup-seconds 120 \
   --report-dir tests/benchmark/reports \
-  --agent-command "python {repo_root}/your_agent_driver.py --workspace {workspace} --instruction-file {instruction_file}"
+  --agent-command "python -m mattbot.cli --prompt-file {instruction_file} --emit-run-summary-json"
 ```
 
 Supported placeholders in `--agent-command`:
@@ -39,3 +39,10 @@ Supported placeholders in `--agent-command`:
 - The first run gets an extra timeout buffer (`--warmup-seconds`, default `120`) to absorb initial model load latency.
 - A human-readable YAML report is written per case (default folder: `tests/benchmark/reports`).
 - Each report includes per-run `before`, `after`, and unified `diff` for fixture files.
+- Each report includes tool-call statistics (`tool_calls.total` and `tool_calls.by_tool`) inferred from CLI output.
+
+For most reliable tool-call counts, use the CLI summary marker:
+
+```bash
+python -m mattbot.cli --prompt-file {instruction_file} --emit-run-summary-json
+```

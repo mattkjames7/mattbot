@@ -7,6 +7,7 @@ import argparse
 import ast
 import difflib
 import json
+import re
 import shlex
 import shutil
 import subprocess
@@ -31,6 +32,7 @@ class RunEvaluation:
     scope_failures: list[str]
     changed_files: list[str]
     file_reports: list["FileReport"]
+    tool_call_counts: dict[str, int]
     command: CommandResult
 
 
@@ -91,6 +93,19 @@ def _run_command(command: str, cwd: Path, timeout_seconds: int) -> CommandResult
     )
 
 
+_ANSI_CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_ANSI_OSC_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)")
+
+
+def _sanitize_terminal_text(text: str) -> str:
+    """Remove ANSI escape sequences and normalize carriage-return redraws."""
+    cleaned = _ANSI_OSC_RE.sub("", text)
+    cleaned = _ANSI_CSI_RE.sub("", cleaned)
+    # Keep newlines but drop carriage returns used by progress redraws.
+    cleaned = cleaned.replace("\r", "")
+    return cleaned
+
+
 def _build_file_reports(before: dict[str, str], after: dict[str, str]) -> list[FileReport]:
     reports: list[FileReport] = []
     for rel in sorted(set(before) | set(after)):
@@ -145,12 +160,45 @@ def _append_yaml_block(lines: list[str], key: str, value: str, indent: int) -> N
         lines.append(f"{prefix}  {line}")
 
 
+def _extract_tool_call_counts(stdout: str, stderr: str) -> dict[str, int]:
+    """Extract per-tool call counts from CLI output.
+
+    Expected line pattern includes text like: "Calling tool: <tool_name>".
+    """
+    combined = f"{stdout}\n{stderr}"
+
+    summary_prefix = "MATTBOT_RUN_SUMMARY_JSON:"
+    for line in combined.splitlines():
+        if not line.startswith(summary_prefix):
+            continue
+        payload = line[len(summary_prefix):].strip()
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+
+        counts_obj = data.get("tool_call_counts")
+        if isinstance(counts_obj, dict):
+            normalized: dict[str, int] = {}
+            for key, value in counts_obj.items():
+                if isinstance(key, str) and isinstance(value, int) and value >= 0:
+                    normalized[key] = value
+            return dict(sorted(normalized.items()))
+
+    matches = re.findall(r"Calling tool:\s*([A-Za-z0-9_\-\.]+)", combined)
+    counts: Counter[str] = Counter(matches)
+    return dict(sorted(counts.items()))
+
+
 def _render_case_report_yaml(case: CaseSpec, results: list[RunEvaluation]) -> str:
     counts = Counter(r.status for r in results)
     total = len(results)
     pass_rate = (counts.get("pass", 0) / total) * 100 if total else 0.0
     soft_fail_rate = (counts.get("soft_fail", 0) / total) * 100 if total else 0.0
     hard_fail_rate = (counts.get("hard_fail", 0) / total) * 100 if total else 0.0
+    aggregate_tool_counts: Counter[str] = Counter()
+    for evaluation in results:
+        aggregate_tool_counts.update(evaluation.tool_call_counts)
 
     lines: list[str] = []
     lines.append(f"case: {_yaml_quote(case.name)}")
@@ -164,6 +212,14 @@ def _render_case_report_yaml(case: CaseSpec, results: list[RunEvaluation]) -> st
     lines.append(f"  pass_rate_percent: {pass_rate:.1f}")
     lines.append(f"  soft_fail_rate_percent: {soft_fail_rate:.1f}")
     lines.append(f"  hard_fail_rate_percent: {hard_fail_rate:.1f}")
+    lines.append("  tool_calls:")
+    lines.append(f"    total: {sum(aggregate_tool_counts.values())}")
+    if aggregate_tool_counts:
+        lines.append("    by_tool:")
+        for tool_name, count in sorted(aggregate_tool_counts.items()):
+            lines.append(f"      {tool_name}: {count}")
+    else:
+        lines.append("    by_tool: {}")
     lines.append("runs:")
 
     for run_idx, evaluation in enumerate(results, start=1):
@@ -176,6 +232,14 @@ def _render_case_report_yaml(case: CaseSpec, results: list[RunEvaluation]) -> st
         lines.append(f"      exit_code: {evaluation.command.exit_code}")
         _append_yaml_block(lines, "stdout", evaluation.command.stdout, indent=6)
         _append_yaml_block(lines, "stderr", evaluation.command.stderr, indent=6)
+        lines.append("    tool_calls:")
+        lines.append(f"      total: {sum(evaluation.tool_call_counts.values())}")
+        if evaluation.tool_call_counts:
+            lines.append("      by_tool:")
+            for tool_name, count in sorted(evaluation.tool_call_counts.items()):
+                lines.append(f"        {tool_name}: {count}")
+        else:
+            lines.append("      by_tool: {}")
         lines.append("    files:")
         for file_report in evaluation.file_reports:
             lines.append(f"      - path: {_yaml_quote(file_report.path)}")
@@ -332,8 +396,19 @@ def _evaluate_case_run(
                 scope_failures=[],
                 changed_files=[],
                 file_reports=[],
+                tool_call_counts={},
                 command=CommandResult(exit_code=124, stdout="", stderr="timeout"),
             )
+
+        cmd_result = CommandResult(
+            exit_code=cmd_result.exit_code,
+            stdout=_sanitize_terminal_text(cmd_result.stdout),
+            stderr=_sanitize_terminal_text(cmd_result.stderr),
+        )
+        tool_call_counts = _extract_tool_call_counts(
+            cmd_result.stdout,
+            cmd_result.stderr,
+        )
 
         after = _snapshot_text_files(workspace)
         changed_files = sorted(
@@ -394,6 +469,7 @@ def _evaluate_case_run(
             scope_failures=scope_failures,
             changed_files=changed_files,
             file_reports=file_reports,
+            tool_call_counts=tool_call_counts,
             command=cmd_result,
         )
 

@@ -118,7 +118,7 @@ python tests/benchmark/runner.py \
     --runs 10 \
     --warmup-seconds 120 \
     --report-dir tests/benchmark/reports \
-    --agent-command "python {repo_root}/your_agent_driver.py --workspace {workspace} --instruction-file {instruction_file}"
+    --agent-command "python -m mattbot.cli --prompt-file {instruction_file} --emit-run-summary-json"
 ```
 
 For a local smoke test without an LLM, use the deterministic sample executor:

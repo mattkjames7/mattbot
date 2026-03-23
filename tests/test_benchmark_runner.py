@@ -7,8 +7,10 @@ from tests.benchmark.runner import (
     CommandResult,
     RunEvaluation,
     _build_file_reports,
+    _extract_tool_call_counts,
     _eval_assertion,
     _render_case_report_yaml,
+    _sanitize_terminal_text,
     _snapshot_text_files,
 )
 
@@ -96,6 +98,7 @@ def test_render_case_report_yaml_contains_before_after_and_diff():
         scope_failures=[],
         changed_files=["file.txt"],
         file_reports=file_reports,
+        tool_call_counts={"read_file": 1, "edit_file": 2},
         command=CommandResult(exit_code=0, stdout="ok\n", stderr=""),
     )
 
@@ -107,3 +110,45 @@ def test_render_case_report_yaml_contains_before_after_and_diff():
     assert "diff:" in content
     assert "-old" in content
     assert "+new" in content
+    assert "tool_calls:" in content
+    assert "read_file: 1" in content
+    assert "edit_file: 2" in content
+
+
+def test_sanitize_terminal_text_removes_ansi_sequences():
+    raw = "\x1b[32mOK\x1b[0m\r\nnext\n\x1b]0;title\x07"
+
+    cleaned = _sanitize_terminal_text(raw)
+
+    assert cleaned == "OK\nnext\n"
+
+
+def test_extract_tool_call_counts_from_output():
+    stdout = """\
+Calling tool: read_file
+Calling tool: edit_file
+Calling tool: edit_file
+"""
+    stderr = "Calling tool: run_bash_command\n"
+
+    counts = _extract_tool_call_counts(stdout, stderr)
+
+    assert counts == {
+        "edit_file": 2,
+        "read_file": 1,
+        "run_bash_command": 1,
+    }
+
+
+def test_extract_tool_call_counts_from_summary_marker():
+    stdout = (
+        'MATTBOT_RUN_SUMMARY_JSON:{"success":true,"tool_call_total":4,'
+        '"tool_call_counts":{"read_file":3,"edit_file":1}}\n'
+    )
+
+    counts = _extract_tool_call_counts(stdout, "")
+
+    assert counts == {
+        "edit_file": 1,
+        "read_file": 3,
+    }
